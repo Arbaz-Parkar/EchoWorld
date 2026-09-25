@@ -1,13 +1,16 @@
 from pathlib import Path
-Path("outputs").mkdir(exist_ok=True)
 
 import matplotlib.pyplot as plt
 
 from src.simulator import run_simulation
 from src.queries import get_live_state, get_latest_from_history, get_temporal_range, get_live_nearby, get_historical_nearby
 from src.sharding import populate_shards, scatter_gather_query
+from src.analytics import report_anomalies
+from src.visualize import build_viewer
 from src.db import history_col
 from src.models import NPC_IDS, WORLD_X, WORLD_Y, NUM_TICKS, DEFAULT_QUERY_RADIUS_KM
+
+Path("outputs").mkdir(exist_ok=True)
 
 run_simulation()
 
@@ -37,6 +40,8 @@ print(f"\nNPC_04 ticks 10-15, routed to its shard:")
 for doc in shard_results:
     print(f"  tick {doc['tick']}: {doc['activity']}")
 
+report_anomalies(history_col, NPC_IDS)
+
 plt.figure(figsize=(10, 8))
 for npc_id in NPC_IDS:
     trail = list(history_col.find({"npc_id": npc_id}).sort("tick", 1))
@@ -47,4 +52,8 @@ plt.xlim(WORLD_X)
 plt.ylim(WORLD_Y)
 plt.title(f"NPC Movement Over {NUM_TICKS} Ticks")
 plt.savefig("outputs/movement_trails.png", dpi=150)
-print("\nPlot saved to outputs/movement_trails.png")
+print("\nStatic trail plot saved to outputs/movement_trails.png")
+
+print("\nOpening interactive playback window, close it to end the program.")
+fig, ax, anim = build_viewer(history_col, NPC_IDS, WORLD_X, WORLD_Y, NUM_TICKS)
+plt.show()
