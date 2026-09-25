@@ -1,3 +1,6 @@
+from pathlib import Path
+Path("outputs").mkdir(exist_ok=True)
+
 import matplotlib.pyplot as plt
 
 from src.simulator import run_simulation
