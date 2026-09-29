@@ -1,14 +1,47 @@
 NPC_IDS = [f"NPC_{i:02d}" for i in range(1, 13)]
-ACTIVITIES = ["patrolling", "idle", "trading", "fighting", "fleeing"]
+NPC_NAMES = {
+    "NPC_01": "Aldric", "NPC_02": "Brenna", "NPC_03": "Cedric", "NPC_04": "Dara",
+    "NPC_05": "Elowen", "NPC_06": "Fenn", "NPC_07": "Garrick", "NPC_08": "Hilda",
+    "NPC_09": "Ivor", "NPC_10": "Jora", "NPC_11": "Kael", "NPC_12": "Lyra",
+}
 
-WORLD_X = (0, 100)
-WORLD_Y = (0, 80)
-NUM_TICKS = 150
-ACTIVITY_CHANGE_CHANCE = 0.08
+WORLD_W = 100
+WORLD_H = 80
+
+ACTIVITY_COLORS = {
+    "walking": "#4fc3f7",
+    "trading": "#ffd54f",
+    "idle": "#b0bec5",
+    "fighting": "#ef5350",
+    "patrolling": "#81c784",
+    "fleeing": "#ff9800",
+}
+
+ZONES = [
+    {"name": "Market", "x": 25, "y": 55, "r": 11, "activity": "trading", "color": "#8d6e2f"},
+    {"name": "Tavern", "x": 72, "y": 60, "r": 9, "activity": "idle", "color": "#6d4c41"},
+    {"name": "Barracks", "x": 75, "y": 20, "r": 11, "activity": "fighting", "color": "#7b3f3f"},
+    {"name": "Watchtower", "x": 22, "y": 18, "r": 8, "activity": "patrolling", "color": "#3f6b4a"},
+]
+
+WALK_SPEED = 1.4
+FLEE_SPEED = 2.8
+DWELL_RANGE = (12, 35)
+FLEE_CHANCE = 0.004
+
+MAX_TICKS = 400
+TICK_SECONDS = 0.25
 RANDOM_SEED = 42
 
-EARTH_RADIUS_KM = 6378.1
-DEFAULT_QUERY_RADIUS_KM = 2000
-
-ANOMALY_TICK = 75
 ANOMALY_NPC = "NPC_03"
+ANOMALY_TICK = 75
+
+# Projection of the game world onto a small patch of the globe, so the
+# database geospatial features measure real metres instead of degrees.
+ORIGIN_LON = 73.10
+ORIGIN_LAT = 19.00
+METERS_PER_UNIT = 50
+
+# Anomaly rule: no NPC can plausibly move farther than this in a single tick
+# (fleeing is the fastest legitimate movement, plus a little noise headroom).
+MAX_PLAUSIBLE_STEP = 3.5
