@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EchoWorld</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>EchoWorld</h1>
+      <span class="tag">a memory store for game NPCs</span>
+    </div>
+    <div class="modes">
+      <button id="modeLive" class="mode active">Live (Redis)</button>
+      <button id="modeReplay" class="mode">Replay (MongoDB)</button>
+    </div>
+    <div class="sim">
+      <button id="btnStart">Start</button>
+      <button id="btnPause">Pause</button>
+      <button id="btnReset">Reset</button>
+      <button id="btnFF">Generate 300 ticks</button>
+    </div>
+  </header>
+
+  <div class="pills">
+    <span class="pill" id="pTick">Tick 0 / 0</span>
+    <span class="pill" id="pRedis">Redis keys 0</span>
+    <span class="pill" id="pShardA">Shard A 0 docs</span>
+    <span class="pill" id="pShardB">Shard B 0 docs</span>
+    <span class="pill source" id="pSource">Source: -</span>
+  </div>
+
+  <main>
+    <section class="stage">
+      <div class="canvas-wrap">
+        <canvas id="map"></canvas>
+        <div id="hint" class="hint"></div>
+      </div>
+      <div class="playbar">
+        <button id="btnPlay">Play</button>
+        <select id="speed">
+          <option value="1">1x</option>
+          <option value="2" selected>2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+        </select>
+        <input type="range" id="scrub" min="1" max="1" value="1">
+        <span id="tickLabel">tick 0</span>
+        <label class="chk"><input type="checkbox" id="chkTrails" checked> trails</label>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <aside>
+      <div class="tabs">
+        <button class="tab active" data-tab="npc">NPC</button>
+        <button class="tab" data-tab="lab">Query Lab</button>
+        <button class="tab" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
+      </div>
+
+      <div id="tab-npc" class="tabpane active">
+        <div id="npcEmpty" class="empty">Click any character on the map to see what it remembers.</div>
+        <div id="npcCard" hidden>
+          <h2 id="npcName"></h2>
+          <div class="sub"><span id="npcId"></span> <span class="chip" id="npcShard"></span></div>
+          <div class="now" id="npcNow"></div>
+          <div class="lat" id="npcLat"></div>
+          <h3>Timeline (click to jump)</h3>
+          <canvas id="timeline" height="36"></canvas>
+          <h3>Time spent per activity</h3>
+          <div id="barsActivity"></div>
+          <h3>Places visited</h3>
+          <div id="barsZone"></div>
+          <div class="sub" id="npcStats"></div>
+        </div>
+      </div>
+
+      <div id="tab-lab" class="tabpane">
+        <h3>Spatial query</h3>
+        <p class="note">Pick a place on the map, then ask both databases who is or was there.</p>
+        <div class="row">
+          <button id="btnProbe">Place probe on map</button>
+          <span id="zoneChips"></span>
+        </div>
+        <label class="field">Radius <span id="radiusVal"></span>
+          <input type="range" id="radius" min="2" max="40" value="12">
+        </label>
+        <div class="row">
+          <label class="field small">From tick <input type="number" id="qFrom" value="1" min="1"></label>
+          <label class="field small">To tick <input type="number" id="qTo" value="400" min="1"></label>
+        </div>
+        <button id="btnRun" class="primary">Run spatial query</button>
+        <div id="labResult"></div>
+
+        <h3>Memory query</h3>
+        <p class="note">Ask what one character was doing between two moments.</p>
+        <div class="row">
+          <select id="memNpc"></select>
+          <label class="field small">From <input type="number" id="mFrom" value="1" min="1"></label>
+          <label class="field small">To <input type="number" id="mTo" value="100" min="1"></label>
+        </div>
+        <button id="btnMem" class="primary">Run memory query</button>
+        <div id="memResult"></div>
+      </div>
+
+      <div id="tab-alerts" class="tabpane">
+        <p class="note">The detector reads stored history and flags any character that covered more ground in one tick than the fastest legitimate movement allows.</p>
+        <button id="btnScan">Scan history</button>
+        <div id="alertList"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
