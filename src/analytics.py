@@ -1,43 +1,37 @@
+import math
 import statistics
 
-
-def compute_step_distances(history_col, npc_id):
-    docs = list(history_col.find({"npc_id": npc_id}).sort("tick", 1))
-    steps = []
-    for prev, curr in zip(docs, docs[1:]):
-        x1, y1 = prev["location"]["coordinates"]
-        x2, y2 = curr["location"]["coordinates"]
-        dist = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        steps.append({"tick": curr["tick"], "distance": dist})
-    return steps
+from .db import shard_for
+from .models import NPC_IDS, NPC_NAMES, MAX_PLAUSIBLE_STEP
 
 
-def find_anomalies(history_col, npc_id, threshold_std=2.5):
+def find_anomalies():
     """
-    Flags ticks where an NPC moved much farther than its own typical step.
-    Deliberately one-directional: an unusually small step just means the
-    NPC stood still, not suspicious. An unusually large step is what would
-    actually indicate a glitch or a teleport in a real game.
+    Speed-limit check over stored history: any NPC that covers more ground in
+    one tick than the fastest legitimate movement is flagged. This is the same
+    idea anti-cheat systems use to catch speed hacks and teleports.
     """
-    steps = compute_step_distances(history_col, npc_id)
-    distances = [s["distance"] for s in steps]
-    if len(distances) < 2:
-        return []
-    mean = statistics.mean(distances)
-    stdev = statistics.stdev(distances)
-    return [
-        s for s in steps
-        if stdev > 0 and (s["distance"] - mean) > threshold_std * stdev
-    ]
-
-
-def report_anomalies(history_col, npc_ids, threshold_std=2.5):
-    print("\nAnomaly scan (movement much larger than an NPC's normal step size):")
-    any_found = False
-    for npc_id in npc_ids:
-        for a in find_anomalies(history_col, npc_id, threshold_std):
-            any_found = True
-            print(f"  {npc_id} at tick {a['tick']}: moved {a['distance']:.2f} units in one tick, "
-                  f"far beyond its usual step size, possible glitch or teleport")
-    if not any_found:
-        print("  No anomalies found at this threshold.")
+    found = []
+    for npc_id in NPC_IDS:
+        docs = list(
+            shard_for(npc_id)
+            .find({"npc_id": npc_id}, {"_id": 0, "tick": 1, "x": 1, "y": 1})
+            .sort("tick", 1)
+        )
+        steps = [
+            (b["tick"], math.hypot(b["x"] - a["x"], b["y"] - a["y"]))
+            for a, b in zip(docs, docs[1:])
+        ]
+        if len(steps) < 5:
+            continue
+        typical = statistics.median(d for _, d in steps) or 0.1
+        for tick, dist in steps:
+            if dist > MAX_PLAUSIBLE_STEP:
+                found.append({
+                    "npc_id": npc_id,
+                    "name": NPC_NAMES[npc_id],
+                    "tick": tick,
+                    "distance": round(dist, 1),
+                    "times_typical": round(dist / typical, 1),
+                })
+    return sorted(found, key=lambda a: a["tick"])
