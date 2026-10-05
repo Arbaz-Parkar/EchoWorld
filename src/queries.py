@@ -182,3 +182,67 @@ def stats():
         },
         "redis_keys": sum(1 for _ in redis_client.scan_iter("npc:live:*")),
     }
+
+
+def _plan_stage(node, found=None):
+    """Walks a MongoDB explain() plan tree and returns the first
+    interesting stage name it finds (IXSCAN, GEO_NEAR_2DSPHERE, COLLSCAN)."""
+    if found is None:
+        found = []
+    if isinstance(node, dict):
+        stage = node.get("stage")
+        if stage in ("IXSCAN", "GEO_NEAR_2DSPHERE", "COLLSCAN"):
+            found.append(stage)
+        for v in node.values():
+            _plan_stage(v, found)
+    elif isinstance(node, list):
+        for v in node:
+            _plan_stage(v, found)
+    return found
+
+
+def index_benchmark(x, y, radius_units, reps=15):
+    """
+    Runs the identical spatial query twice: once letting MongoDB use the
+    2dsphere index normally, once with a $natural hint that forces a full
+    collection scan instead. Same data, same filter, only the access path
+    changes. Each version runs several times and the fastest run is kept,
+    since that best reflects the query itself rather than one-off system
+    noise (a common benchmarking practice).
+    """
+    lon, lat = to_geo(x, y)
+    radius_m = units_to_meters(radius_units)
+    query = {
+        "location": {
+            "$geoWithin": {"$centerSphere": [[lon, lat], radius_m / 1000.0 / EARTH_RADIUS_KM]}
+        }
+    }
+    col = shards[0]
+
+    indexed_times = []
+    scan_times = []
+
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        list(col.find(query).hint([("location", "2dsphere")]))
+        indexed_times.append(time.perf_counter() - t0)
+
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        list(col.find(query).hint([("$natural", 1)]))
+        scan_times.append(time.perf_counter() - t0)
+
+    try:
+        indexed_plan = _plan_stage(col.find(query).hint([("location", "2dsphere")]).explain())
+        scan_plan = _plan_stage(col.find(query).hint([("$natural", 1)]).explain())
+    except Exception:
+        indexed_plan, scan_plan = [], []
+
+    return {
+        "documents_scanned": col.count_documents({}),
+        "indexed_ms": round(min(indexed_times) * 1000, 3),
+        "scan_ms": round(min(scan_times) * 1000, 3),
+        "indexed_plan": indexed_plan[0] if indexed_plan else "unknown",
+        "scan_plan": scan_plan[0] if scan_plan else "unknown",
+        "reps": reps,
+    }
