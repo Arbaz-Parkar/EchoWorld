@@ -12,6 +12,7 @@
       <h1>EchoWorld</h1>
       <span class="tag">a memory store for game NPCs</span>
     </div>
+    <button id="btnHelp" class="help">What is this?</button>
     <div class="modes">
       <button id="modeLive" class="mode active">Live (Redis)</button>
       <button id="modeReplay" class="mode">Replay (MongoDB)</button>
@@ -31,6 +32,8 @@
     <span class="pill" id="pShardB">Shard B 0 docs</span>
     <span class="pill source" id="pSource">Source: -</span>
   </div>
+
+  <div id="ticker" class="ticker"><div id="tickerInner" class="ticker-inner"></div></div>
 
   <main>
     <section class="stage">
@@ -58,6 +61,7 @@
         <button class="tab active" data-tab="npc">NPC</button>
         <button class="tab" data-tab="lab">Query Lab</button>
         <button class="tab" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
+        <button class="tab" data-tab="concepts">Concepts</button>
       </div>
 
       <div id="tab-npc" class="tabpane active">
@@ -92,7 +96,10 @@
           <label class="field small">To tick <input type="number" id="qTo" value="400" min="1"></label>
         </div>
         <button id="btnRun" class="primary">Run spatial query</button>
+        <button id="btnBenchmark">Compare: with index vs without</button>
+        <div id="queryShown" class="query-shown"></div>
         <div id="labResult"></div>
+        <div id="benchResult"></div>
 
         <h3>Memory query</h3>
         <p class="note">Ask what one character was doing between two moments.</p>
@@ -110,8 +117,35 @@
         <button id="btnScan">Scan history</button>
         <div id="alertList"></div>
       </div>
+
+      <div id="tab-concepts" class="tabpane">
+        <div id="conceptCards"></div>
+      </div>
     </aside>
   </main>
+
+  <div id="onboard" class="modal-backdrop" hidden>
+    <div class="modal">
+      <h2>What am I looking at?</h2>
+      <p>Imagine a small game world with twelve characters going about their
+      day, walking between a market, a tavern, barracks, and a watchtower.
+      Every time a character moves or changes what it is doing, that update
+      gets written to two different databases at the same time, for two
+      different reasons.</p>
+      <p><strong>Redis</strong> always holds just the current moment: where
+      is this character right now, what are they doing. It is built to
+      answer that instantly, which matters because a real game asks this
+      question every single frame.</p>
+      <p><strong>MongoDB</strong> holds everything that has ever happened,
+      permanently. It is slower to search but it can answer questions Redis
+      never could, like "what was this character doing an hour ago" or
+      "who has ever walked past this spot."</p>
+      <p>Click any character to see what it remembers. Use Query Lab to ask
+      both databases the same question and compare their answers. Open the
+      Concepts tab any time for plain explanations of the ideas involved.</p>
+      <button id="btnCloseOnboard" class="primary">Got it, let me explore</button>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>
