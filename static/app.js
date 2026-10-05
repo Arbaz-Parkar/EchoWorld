@@ -23,6 +23,10 @@ const state = {
   lastTs: 0,
   lastPanel: 0,
   lastScanTick: -1,
+  tickerPrevLive: new Map(),
+  tickerPrevReplayTick: null,
+  tickerQueue: [],
+  onboardShown: false,
 };
 
 const canvas = $("map");
@@ -52,6 +56,112 @@ function actColor(a) {
   return state.meta.activities[a] || "#ffffff";
 }
 
+/* ---------- plain-language concepts, for non-technical viewers ---------- */
+
+const CONCEPTS = [
+  {
+    title: "Redis - the character's short-term memory",
+    body: "Redis stores only what each character is doing right this second: their position and activity, nothing older. Every update overwrites the last one, so a lookup is always instant, which matters because a real game asks this question for every character, every single frame.",
+    analogy: "Think of it like glancing at someone right now. You see where they are this instant, not where they were five minutes ago.",
+  },
+  {
+    title: "MongoDB - the character's permanent memory",
+    body: "Every time a character's state changes, a brand new, timestamped record is added to MongoDB. Nothing is ever overwritten, so the complete history of every character is always there to search by time or by place.",
+    analogy: "Think of it like a diary that is never erased, only added to.",
+  },
+  {
+    title: "Why two different databases",
+    body: "Redis is built to be read instantly but cannot answer questions about the past. MongoDB can answer questions about the past but is slower to search since it has to look through more data. Using the right tool for each job, instead of forcing one database to do both, is the actual point of this project.",
+    analogy: "A sticky note on your desk versus a filing cabinet. You would not file a sticky note, and you would not keep ten years of records on a sticky note.",
+  },
+  {
+    title: "Sharding - splitting the filing cabinet in two",
+    body: "Every character's full history always lives on the same one of two shards, decided by their ID. A real system with millions of characters would need far more than two, splitting the data across many servers so no single one is overloaded. This project does it at a tiny, two-shard scale to demonstrate the same idea.",
+    analogy: "Like splitting one enormous filing cabinet into two smaller ones, and always knowing exactly which cabinet a given folder is in without having to check both.",
+  },
+  {
+    title: "Geospatial index - searching by location quickly",
+    body: "Without an index, finding everyone who was ever near a given spot means checking every single record one by one. The index organises records by location in advance, so that search can skip almost everything irrelevant. The Query Lab tab lets you compare the search with and without this index directly.",
+    analogy: "Like the index at the back of a textbook versus reading every page to find one topic.",
+  },
+];
+
+function renderConcepts() {
+  const box = $("conceptCards");
+  box.innerHTML = "";
+  for (const c of CONCEPTS) {
+    const card = document.createElement("div");
+    card.className = "concept-card";
+    card.innerHTML =
+      "<h4>" + c.title + "</h4><p>" + c.body + '</p><p class="analogy">' + c.analogy + "</p>";
+    box.appendChild(card);
+  }
+}
+
+/* ---------- plain-language event ticker ---------- */
+
+function describeEvent(id, prev, curr) {
+  const name = nameOf(id);
+  if (curr.activity === "fleeing" && (!prev || prev.activity !== "fleeing")) {
+    return name + " suddenly ran off.";
+  }
+  if (prev && prev.activity !== curr.activity) {
+    if (curr.activity === "walking" && curr.target) {
+      return name + " set off toward the " + curr.target + ".";
+    }
+    if (curr.zone) {
+      return name + " started " + curr.activity + " at the " + curr.zone + ".";
+    }
+    return name + " started " + curr.activity + ".";
+  }
+  return null;
+}
+
+function queueTicker(text) {
+  if (!text) return;
+  state.tickerQueue.push(text);
+  if (state.tickerQueue.length > 8) state.tickerQueue.shift();
+}
+
+function startTickerRotation() {
+  const el = $("tickerInner");
+  setInterval(() => {
+    let text = state.tickerQueue.shift();
+    if (!text) {
+      text = state.npcs.length
+        ? "Characters are going about their day. Click one to see what it remembers."
+        : "Press Start or Generate 300 ticks to begin.";
+    }
+    el.classList.remove("ticker-inner");
+    void el.offsetWidth;
+    el.classList.add("ticker-inner");
+    el.textContent = text;
+  }, 2600);
+}
+
+function detectLiveEvents(npcs) {
+  for (const n of npcs) {
+    const prev = state.tickerPrevLive.get(n.id);
+    queueTicker(describeEvent(n.id, prev, n));
+    state.tickerPrevLive.set(n.id, { activity: n.activity, zone: n.zone, target: n.target });
+  }
+}
+
+function detectReplayEvents(tick) {
+  if (tick < 1 || tick > state.maxTick) return;
+  if (state.tickerPrevReplayTick === tick) return;
+  const prevTick = state.tickerPrevReplayTick;
+  state.tickerPrevReplayTick = tick;
+  if (prevTick === null || tick - prevTick !== 1) return;
+  const curFrame = state.frames.get(tick);
+  const prevFrame = state.frames.get(prevTick);
+  if (!curFrame || !prevFrame) return;
+  const prevMap = new Map(prevFrame.map((n) => [n.id, n]));
+  for (const n of curFrame) {
+    queueTicker(describeEvent(n.id, prevMap.get(n.id), n));
+  }
+}
+
 /* ---------- setup ---------- */
 
 async function init() {
@@ -59,7 +169,10 @@ async function init() {
   buildLegend();
   buildZoneChips();
   buildNpcSelect();
+  renderConcepts();
   wireEvents();
+  wireOnboarding();
+  startTickerRotation();
   resize();
   $("qTo").value = state.meta.max_ticks;
   $("mTo").value = 100;
@@ -70,6 +183,20 @@ async function init() {
   setInterval(pollStats, 1000);
   setInterval(refreshProfileLive, 3000);
   requestAnimationFrame(frame);
+}
+
+function wireOnboarding() {
+  const modal = $("onboard");
+  if (!localStorage.getItem("echoworld_onboarded")) {
+    modal.hidden = false;
+  }
+  const close = () => {
+    modal.hidden = true;
+    localStorage.setItem("echoworld_onboarded", "1");
+  };
+  $("btnCloseOnboard").onclick = close;
+  $("btnHelp").onclick = () => { modal.hidden = false; };
+  modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
 }
 
 function buildLegend() {
@@ -158,6 +285,7 @@ function wireEvents() {
     if (state.probe) state.probe.r = Number($("radius").value);
   };
   $("btnRun").onclick = runSpatial;
+  $("btnBenchmark").onclick = runBenchmark;
   $("btnMem").onclick = runMemory;
   $("btnScan").onclick = scanAlerts;
 
@@ -232,10 +360,15 @@ function clearAll() {
   state.probe = null;
   state.anomalies = [];
   state.lastScanTick = -1;
+  state.tickerPrevLive.clear();
+  state.tickerPrevReplayTick = null;
+  state.tickerQueue = [];
   $("npcCard").hidden = true;
   $("npcEmpty").hidden = false;
   $("labResult").innerHTML = "";
   $("memResult").innerHTML = "";
+  $("benchResult").innerHTML = "";
+  $("queryShown").classList.remove("show");
   renderAlerts();
   updateScrub();
   updatePlayButton();
@@ -250,6 +383,7 @@ async function setMode(mode) {
   if (mode === "replay") {
     state.frames.clear();
     state.maxTick = 0;
+    state.tickerPrevReplayTick = null;
     await syncFrames();
     state.playhead = 1;
     updateScrub();
@@ -273,7 +407,9 @@ function applyLive(d) {
     L.disp.clear();
     L.trails.clear();
     L.target.clear();
+    state.tickerPrevLive.clear();
   }
+  detectLiveEvents(d.npcs);
   L.tick = d.tick;
   L.ms = d.ms;
   for (const n of d.npcs) {
@@ -416,6 +552,7 @@ function frame(ts) {
   updateTickLabel();
 
   state.npcs = currentNpcs(dt);
+  if (state.mode === "replay") detectReplayEvents(Math.floor(state.playhead));
   draw(ts / 1000);
 
   if (ts - state.lastPanel > 200) {
@@ -876,6 +1013,43 @@ function updateNowPanel() {
 
 /* ---------- query lab ---------- */
 
+function showQuery(text) {
+  const el = $("queryShown");
+  el.textContent = text;
+  el.classList.add("show");
+}
+
+async function runBenchmark() {
+  if (!state.probe) {
+    $("benchResult").innerHTML = '<div class="result">Place a probe on the map first.</div>';
+    return;
+  }
+  const btn = $("btnBenchmark");
+  btn.textContent = "Running...";
+  const q = new URLSearchParams({
+    x: state.probe.x.toFixed(2), y: state.probe.y.toFixed(2), radius: state.probe.r,
+  });
+  try {
+    const r = await api("/api/index_benchmark?" + q.toString());
+    const max = Math.max(r.indexed_ms, r.scan_ms, 0.01);
+    $("benchResult").innerHTML =
+      '<div class="result"><h4>Same query, same data, only the access path changes</h4>' +
+      '<div class="bench-bar">' +
+      '<div class="bench-row"><span class="label">With 2dsphere index</span>' +
+      '<span class="track"><span class="fill indexed" style="width:' + (r.indexed_ms / max * 100) + '%"></span></span>' +
+      '<span class="num">' + r.indexed_ms + ' ms</span></div>' +
+      '<div class="bench-row"><span class="label">Forced full scan</span>' +
+      '<span class="track"><span class="fill scan" style="width:' + (r.scan_ms / max * 100) + '%"></span></span>' +
+      '<span class="num">' + r.scan_ms + ' ms</span></div>' +
+      '</div>' +
+      '<div class="meta">Indexed plan: ' + r.indexed_plan + " | Full scan plan: " + r.scan_plan +
+      " | " + r.documents_scanned + " documents in this shard, fastest of " + r.reps + " runs each.</div></div>";
+  } catch (e) {
+    $("benchResult").innerHTML = '<div class="result">Benchmark failed: ' + e.message + "</div>";
+  }
+  btn.textContent = "Compare: with index vs without";
+}
+
 async function runSpatial() {
   if (!state.probe) {
     $("labResult").innerHTML = '<div class="result">Place a probe on the map first, or pick a place name above.</div>';
@@ -886,6 +1060,13 @@ async function runSpatial() {
     x: state.probe.x.toFixed(2), y: state.probe.y.toFixed(2), radius: state.probe.r,
     t_from: $("qFrom").value || 1, t_to: $("qTo").value || state.meta.max_ticks,
   });
+  showQuery(
+    "Redis:  GEOSEARCH npc:live:positions FROMLONLAT <probe> BYRADIUS " + state.probe.r + "\n\n" +
+    "MongoDB:  db.history.find({\n" +
+    "  location: { $geoWithin: { $centerSphere: [[<probe lon>, <probe lat>], radius] } },\n" +
+    "  tick: { $gte: " + ($("qFrom").value || 1) + ", $lte: " + ($("qTo").value || state.meta.max_ticks) + " }\n" +
+    "})  -- run against both shards, results merged"
+  );
   try {
     const r = await api("/api/nearby?" + q.toString());
     state.probe.points = r.history.points;
@@ -918,6 +1099,12 @@ async function runMemory() {
   const q = new URLSearchParams({
     npc: $("memNpc").value, t_from: $("mFrom").value || 1, t_to: $("mTo").value || state.meta.max_ticks,
   });
+  showQuery(
+    "MongoDB:  shard_for(" + $("memNpc").value + ").find({\n" +
+    "  npc_id: \"" + $("memNpc").value + "\",\n" +
+    "  tick: { $gte: " + ($("mFrom").value || 1) + ", $lte: " + ($("mTo").value || state.meta.max_ticks) + " }\n" +
+    "})  -- routed to exactly one shard, the other is never touched"
+  );
   try {
     const r = await api("/api/memory?" + q.toString());
     const rows = r.segments.map((s) => {
