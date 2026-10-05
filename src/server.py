@@ -98,6 +98,9 @@ def nearby(
 ):
     return queries.nearby(x, y, radius, t_from, t_to)
 
+@app.get("/api/index_benchmark")
+def index_benchmark(x: float, y: float, radius: float = Query(10, ge=1, le=60)):
+    return queries.index_benchmark(x, y, radius)
 
 @app.get("/api/anomalies")
 def anomalies():
