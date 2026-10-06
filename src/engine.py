@@ -6,6 +6,7 @@ import time
 from .models import (
     NPC_IDS, WORLD_W, WORLD_H, ZONES, WALK_SPEED, FLEE_SPEED, DWELL_RANGE,
     FLEE_CHANCE, MAX_TICKS, TICK_SECONDS, RANDOM_SEED, ANOMALY_NPC, ANOMALY_TICK,
+    NPC_ROLES,
 )
 from .writer import write_frame
 from .db import reset_all
@@ -37,7 +38,7 @@ class Engine:
         self.tick = 0
         self.npcs = []
         for npc_id in NPC_IDS:
-            zone = self.rng.choice(ZONES)
+            zone = ZONE_BY_NAME[NPC_ROLES[npc_id]]
             self.npcs.append({
                 "id": npc_id,
                 "x": round(zone["x"] + self.rng.uniform(-zone["r"] / 2, zone["r"] / 2), 2),
@@ -115,6 +116,8 @@ class Engine:
             self.tick += 1
             for n in self.npcs:
                 if n["id"] == ANOMALY_NPC and self.tick == ANOMALY_TICK:
+                    # Deliberate glitch: a sudden teleport, so the anomaly
+                    # detector has something real to catch.
                     n["x"] = round(self.rng.uniform(0, WORLD_W), 2)
                     n["y"] = round(self.rng.uniform(0, WORLD_H), 2)
                     n["zone"] = zone_at(n["x"], n["y"])
