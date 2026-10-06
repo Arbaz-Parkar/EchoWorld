@@ -170,6 +170,7 @@ async function init() {
   buildZoneChips();
   buildNpcSelect();
   renderConcepts();
+  buildScenery();
   wireEvents();
   wireOnboarding();
   startTickerRotation();
@@ -574,17 +575,132 @@ function rr(g, x, y, w, h, r) {
   g.closePath();
 }
 
+function mulberry32(seed) {
+  let a = seed;
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let r = Math.imul(a ^ (a >>> 15), 1 | a);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildScenery() {
+  const w = state.meta.world.w;
+  const h = state.meta.world.h;
+  const rand = mulberry32(7);
+  const inAnyZone = (x, y, pad) =>
+    state.meta.zones.some((z) => Math.hypot(x - z.x, y - z.y) < z.r + pad);
+
+  const grass = [];
+  for (let i = 0; i < 220; i++) {
+    const x = rand() * w, y = rand() * h;
+    if (inAnyZone(x, y, 2)) continue;
+    grass.push({ x, y, a: rand() * Math.PI, len: 0.5 + rand() * 0.6 });
+  }
+
+  const props = [];
+  const kinds = ["tree", "tree", "rock", "bush"];
+  for (let i = 0; i < 22; i++) {
+    const x = rand() * w, y = rand() * h;
+    if (inAnyZone(x, y, 6)) continue;
+    props.push({ x, y, kind: kinds[Math.floor(rand() * kinds.length)], scale: 0.7 + rand() * 0.6 });
+  }
+
+  const fireflies = [];
+  for (let i = 0; i < 12; i++) {
+    fireflies.push({ x: rand() * w, y: rand() * h, phase: rand() * Math.PI * 2, speed: 0.3 + rand() * 0.4 });
+  }
+
+  state.scenery = { grass, props, fireflies };
+}
+
+function drawProp(p) {
+  const px = p.x * scale, py = p.y * scale, u = scale * p.scale * 0.5;
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(px, py, 2.4 * u, 0.9 * u, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (p.kind === "tree") {
+    ctx.fillStyle = "#5d4631";
+    ctx.fillRect(px - 0.5 * u, py - 4 * u, 1 * u, 4 * u);
+    ctx.fillStyle = "#2f5d3a";
+    ctx.beginPath();
+    ctx.arc(px, py - 5.5 * u, 3.2 * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#3f7a4e";
+    ctx.beginPath();
+    ctx.arc(px - 1.2 * u, py - 6.3 * u, 2 * u, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.kind === "rock") {
+    ctx.fillStyle = "#6b6b63";
+    ctx.beginPath();
+    ctx.ellipse(px, py - 0.6 * u, 1.8 * u, 1.2 * u, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#3f6b3f";
+    ctx.beginPath();
+    ctx.arc(px, py - 0.8 * u, 1.5 * u, 0, Math.PI * 2);
+    ctx.arc(px - 1.3 * u, py - 0.4 * u, 1.1 * u, 0, Math.PI * 2);
+    ctx.arc(px + 1.3 * u, py - 0.4 * u, 1.1 * u, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawScenery() {
+  if (!state.scenery) return;
+  ctx.strokeStyle = "rgba(140,200,120,0.35)";
+  ctx.lineWidth = Math.max(1, scale * 0.12);
+  ctx.lineCap = "round";
+  for (const g of state.scenery.grass) {
+    const px = g.x * scale, py = g.y * scale;
+    const dx = Math.cos(g.a) * g.len * scale * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + dx, py - g.len * scale * 0.5);
+    ctx.stroke();
+  }
+  for (const p of state.scenery.props) drawProp(p);
+}
+
+function drawFireflies(t) {
+  if (!state.scenery) return;
+  for (const f of state.scenery.fireflies) {
+    const px = (f.x + Math.sin(t * f.speed + f.phase) * 2) * scale;
+    const py = (f.y + Math.cos(t * f.speed * 0.7 + f.phase) * 2) * scale;
+    const glow = Math.max(0.15, 0.4 + Math.sin(t * 2 + f.phase) * 0.3);
+    ctx.shadowColor = "rgba(255,230,140,0.8)";
+    ctx.shadowBlur = scale * 0.6;
+    ctx.fillStyle = "rgba(255,240,160," + glow + ")";
+    ctx.beginPath();
+    ctx.arc(px, py, scale * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawVignette(W, H) {
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.72);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.38)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
 function draw(t) {
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   drawGround(W, H);
+  drawScenery();
   drawZones();
   if (state.showTrails) drawTrails();
   drawProbe();
   const sorted = state.npcs.slice().sort((a, b) => a.y - b.y);
   sorted.forEach((n) => drawAvatar(n, t));
   drawAnomalyRings(t);
+  drawFireflies(t);
+  drawVignette(W, H);
 }
 
 function drawGround(W, H) {
@@ -717,6 +833,38 @@ function drawProbe() {
   ctx.stroke();
 }
 
+function roleOf(id) {
+  const n = state.meta.npcs.find((x) => x.id === id);
+  return n ? n.role : null;
+}
+
+function drawRoleGear(id, px, py, u, bob, hue) {
+  const role = roleOf(id);
+  const y = py - 10.6 * u + bob;
+  if (role === "Market") {
+    ctx.fillStyle = "#c98a3f";
+    ctx.beginPath();
+    ctx.ellipse(px, y + 0.3 * u, 2.2 * u, 0.9 * u, 0, Math.PI, 0);
+    ctx.fill();
+  } else if (role === "Barracks") {
+    ctx.fillStyle = "#8a8f98";
+    ctx.beginPath();
+    ctx.arc(px, y, 2.25 * u, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(px - 2.25 * u, y - 0.1 * u, 4.5 * u, 0.5 * u);
+    ctx.fillStyle = "#5c6168";
+    ctx.fillRect(px - 0.35 * u, y - 2.1 * u, 0.7 * u, 1.6 * u);
+  } else if (role === "Watchtower") {
+    ctx.fillStyle = "#2f5d3a";
+    ctx.beginPath();
+    ctx.moveTo(px - 2.1 * u, y + 0.3 * u);
+    ctx.quadraticCurveTo(px, y - 2.6 * u, px + 2.1 * u, y + 0.3 * u);
+    ctx.quadraticCurveTo(px, y - 1 * u, px - 2.1 * u, y + 0.3 * u);
+    ctx.fill();
+  }
+  // Tavern-goers keep their natural hair, no overlay needed.
+}
+
 function drawAvatar(n, t) {
   const u = scale * 0.36;
   const px = n.x * scale;
@@ -792,6 +940,7 @@ function drawAvatar(n, t) {
   ctx.arc(px + face * 1.5 * u, py - 10.2 * u + bob, 0.28 * u, 0, Math.PI * 2);
   ctx.fill();
 
+  drawRoleGear(n.id, px, py, u, bob, hue);
   drawAccessory(n.activity, px, py, u, bob, face, t, color);
 
   // name and activity label
