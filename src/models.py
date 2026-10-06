@@ -5,6 +5,15 @@ NPC_NAMES = {
     "NPC_09": "Ivor", "NPC_10": "Jora", "NPC_11": "Kael", "NPC_12": "Lyra",
 }
 
+# Each NPC's permanent role, independent of whatever they're doing right
+# now, so a merchant still looks like a merchant even while fleeing.
+NPC_ROLES = {
+    "NPC_01": "Market", "NPC_02": "Market", "NPC_03": "Market",
+    "NPC_04": "Tavern", "NPC_05": "Tavern", "NPC_06": "Tavern",
+    "NPC_07": "Barracks", "NPC_08": "Barracks", "NPC_09": "Barracks",
+    "NPC_10": "Watchtower", "NPC_11": "Watchtower", "NPC_12": "Watchtower",
+}
+
 WORLD_W = 100
 WORLD_H = 80
 
