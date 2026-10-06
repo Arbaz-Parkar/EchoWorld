@@ -9,6 +9,6 @@ time and by location.
 
 1. Start the databases: `docker compose up -d`
 2. Create a virtual environment and install dependencies:
-   `python -m venv .venv` then activate it (.venv\Scripts\activate"), then `pip install -r requirements.txt`
+   `python -m venv .venv` then activate it (`.venv\Scripts\activate`), then `pip install -r requirements.txt`
 3. Start the server: `python run.py`
 4. Open `http://127.0.0.1:8000` in your browser.
