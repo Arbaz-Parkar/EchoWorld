@@ -8,7 +8,7 @@ from . import queries, analytics
 from .db import SHARD_LABELS, shard_index
 from .engine import engine
 from .models import (
-    NPC_IDS, NPC_NAMES, WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
+    NPC_IDS, NPC_NAMES, NPC_ROLES, WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
     MAX_TICKS, TICK_SECONDS, METERS_PER_UNIT,
 )
 
@@ -29,7 +29,7 @@ def meta():
         "zones": ZONES,
         "activities": ACTIVITY_COLORS,
         "npcs": [
-            {"id": i, "name": NPC_NAMES[i], "shard": SHARD_LABELS[shard_index(i)]}
+            {"id": i, "name": NPC_NAMES[i], "role": NPC_ROLES[i], "shard": SHARD_LABELS[shard_index(i)]}
             for i in NPC_IDS
         ],
         "max_ticks": MAX_TICKS,
@@ -98,9 +98,11 @@ def nearby(
 ):
     return queries.nearby(x, y, radius, t_from, t_to)
 
+
 @app.get("/api/index_benchmark")
 def index_benchmark(x: float, y: float, radius: float = Query(10, ge=1, le=60)):
     return queries.index_benchmark(x, y, radius)
+
 
 @app.get("/api/anomalies")
 def anomalies():
