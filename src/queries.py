@@ -6,18 +6,22 @@ from collections import defaultdict
 from .db import (
     redis_client, shards, shard_for, shard_index, SHARD_LABELS, GEO_KEY,
 )
-from .geo import to_geo, units_to_meters, meters_to_units, EARTH_RADIUS_KM
+from .geo import (
+    to_geo, position_from_document, units_to_meters, meters_to_units,
+    EARTH_RADIUS_KM,
+)
 from .models import NPC_IDS, MAX_PLAUSIBLE_STEP
 
 PROJECTION = {
     "_id": 0, "npc_id": 1, "tick": 1, "x": 1, "y": 1,
-    "activity": 1, "zone": 1, "target": 1,
+    "location": 1, "activity": 1, "zone": 1, "target": 1,
 }
 
 
 def _npc_view(d):
+    x, y = position_from_document(d)
     return {
-        "id": d["npc_id"], "x": d["x"], "y": d["y"], "activity": d["activity"],
+        "id": d["npc_id"], "x": x, "y": y, "activity": d["activity"],
         "zone": d.get("zone") or None, "target": d.get("target") or None,
     }
 
@@ -102,7 +106,9 @@ def npc_profile(npc_id):
     distance = 0.0
     jumps = 0
     for a, b in zip(docs, docs[1:]):
-        step = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
+        ax, ay = position_from_document(a)
+        bx, by = position_from_document(b)
+        step = math.hypot(bx - ax, by - ay)
         if step > MAX_PLAUSIBLE_STEP:
             jumps += 1
         else:
@@ -154,12 +160,13 @@ def nearby(x, y, radius_units, t_from, t_to):
     counts = defaultdict(int)
     points = []
     total = 0
+    projection = {"_id": 0, "npc_id": 1, "x": 1, "y": 1, "location": 1}
     for col in shards:
-        for d in col.find(query, {"_id": 0, "npc_id": 1, "x": 1, "y": 1}):
+        for d in col.find(query, projection):
             total += 1
             counts[d["npc_id"]] += 1
             if len(points) < 3000:
-                points.append([d["x"], d["y"]])
+                points.append(list(position_from_document(d)))
     ms_history = (time.perf_counter() - t1) * 1000
 
     per_npc = sorted(

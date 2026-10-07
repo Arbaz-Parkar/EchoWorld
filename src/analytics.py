@@ -2,6 +2,7 @@ import math
 import statistics
 
 from .db import shard_for
+from .geo import position_from_document
 from .models import NPC_IDS, NPC_NAMES, MAX_PLAUSIBLE_STEP
 
 
@@ -13,15 +14,19 @@ def find_anomalies():
     """
     found = []
     for npc_id in NPC_IDS:
+        projection = {
+            "_id": 0, "tick": 1, "x": 1, "y": 1, "location": 1,
+        }
         docs = list(
             shard_for(npc_id)
-            .find({"npc_id": npc_id}, {"_id": 0, "tick": 1, "x": 1, "y": 1})
+            .find({"npc_id": npc_id}, projection)
             .sort("tick", 1)
         )
-        steps = [
-            (b["tick"], math.hypot(b["x"] - a["x"], b["y"] - a["y"]))
-            for a, b in zip(docs, docs[1:])
-        ]
+        steps = []
+        for a, b in zip(docs, docs[1:]):
+            ax, ay = position_from_document(a)
+            bx, by = position_from_document(b)
+            steps.append((b["tick"], math.hypot(bx - ax, by - ay)))
         if len(steps) < 5:
             continue
         typical = statistics.median(d for _, d in steps) or 0.1
