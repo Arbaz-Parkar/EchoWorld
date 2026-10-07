@@ -1,6 +1,6 @@
 # EchoWorld
 
-EchoWorld is a small, interactive NPC world built to demonstrate how a game-like simulation can use different NoSQL databases for live state and historical memory. Watch characters move around the world, inspect what they were doing at earlier ticks, and compare spatial queries that use a MongoDB geospatial index with a collection scan.
+EchoWorld is a small, interactive NPC world built to demonstrate how a game-like simulation can use different NoSQL databases for live state and historical memory. Its original Nordic-inspired city has stone walls, gate towers, a raised high hall, a central market square, and distinct civic districts. Watch characters move through the city, inspect what they were doing at earlier ticks, and compare spatial queries that use a MongoDB geospatial index with a collection scan.
 
 Each run starts with randomized NPC positions and behavior. The browser interface displays the world in a canvas and includes live and replay modes, character profiles, a Query Lab, and an anomaly alert view.
 
@@ -80,7 +80,7 @@ To stop the database containers, run `docker compose down`. Docker's named volum
 4. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
 5. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
 
-The world has 12 NPCs, four activity zones, and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
+The city has 12 NPCs, eight destinations, and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
 
 ## Data and reset behavior
 
