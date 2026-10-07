@@ -127,7 +127,9 @@ canvas#map { display: block; width: 100%; cursor: pointer; }
 }
 
 .playbar { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
-.playbar input[type="range"] { flex: 1; accent-color: var(--accent); }
+.replay-controls { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.replay-controls[hidden] { display: none; }
+.replay-controls input[type="range"] { flex: 1; min-width: 40px; accent-color: var(--accent); }
 #tickLabel { min-width: 115px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chk { color: var(--muted); }
 

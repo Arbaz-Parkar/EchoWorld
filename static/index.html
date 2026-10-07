@@ -42,14 +42,16 @@
         <div id="hint" class="hint"></div>
       </div>
       <div class="playbar">
-        <button id="btnPlay">Play</button>
-        <select id="speed">
-          <option value="1">1x</option>
-          <option value="2" selected>2x</option>
-          <option value="4">4x</option>
-          <option value="8">8x</option>
-        </select>
-        <input type="range" id="scrub" min="1" max="1" value="1">
+        <div id="replayControls" class="replay-controls" hidden>
+          <button id="btnPlay">Play</button>
+          <select id="speed">
+            <option value="1">1x</option>
+            <option value="2" selected>2x</option>
+            <option value="4">4x</option>
+            <option value="8">8x</option>
+          </select>
+          <input type="range" id="scrub" min="1" max="1" value="1">
+        </div>
         <span id="tickLabel">tick 0</span>
         <label class="chk"><input type="checkbox" id="chkTrails" checked> trails</label>
       </div>

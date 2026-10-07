@@ -172,6 +172,7 @@ async function init() {
   renderConcepts();
   buildScenery();
   wireEvents();
+  updatePlaybackControls();
   wireOnboarding();
   startTickerRotation();
   resize();
@@ -336,6 +337,10 @@ function updatePlayButton() {
   $("btnPlay").textContent = state.playing ? "Pause" : "Play";
 }
 
+function updatePlaybackControls() {
+  $("replayControls").hidden = state.mode !== "replay";
+}
+
 /* ---------- simulation control and polling ---------- */
 
 async function simCall(path) {
@@ -378,6 +383,7 @@ function clearAll() {
 async function setMode(mode) {
   state.mode = mode;
   state.playing = false;
+  updatePlaybackControls();
   updatePlayButton();
   $("modeLive").classList.toggle("active", mode === "live");
   $("modeReplay").classList.toggle("active", mode === "replay");
