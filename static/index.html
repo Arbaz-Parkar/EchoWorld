@@ -7,36 +7,68 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
+  <header class="site-header">
     <div class="brand">
       <h1>EchoWorld</h1>
       <span class="tag">a memory store for game NPCs</span>
     </div>
     <button id="btnHelp" class="help">What is this?</button>
-    <div class="modes">
-      <button id="modeLive" class="mode active">Live (Redis)</button>
-      <button id="modeReplay" class="mode">Replay (MongoDB)</button>
-    </div>
-    <div class="sim">
-      <button id="btnStart">Start</button>
-      <button id="btnPause">Pause</button>
-      <button id="btnReset">Reset</button>
-      <button id="btnFF">Generate 300 ticks</button>
-    </div>
   </header>
 
-  <div class="pills">
-    <span class="pill" id="pTick">Tick 0 / 0</span>
-    <span class="pill" id="pRedis">Redis keys 0</span>
-    <span class="pill" id="pShardA">Shard A 0 docs</span>
-    <span class="pill" id="pShardB">Shard B 0 docs</span>
-    <span class="pill source" id="pSource">Source: -</span>
+  <section class="control-panel" aria-label="World simulation controls">
+    <div class="control-intro">
+      <span class="eyebrow">WORLD SIMULATION</span>
+      <h2>Run the world</h2>
+      <p>Choose the data view, then start or generate a run.</p>
+    </div>
+    <div class="control-groups">
+      <div class="control-group">
+        <span class="control-label">Data view</span>
+        <div class="modes" role="group" aria-label="Data view">
+          <button id="modeLive" class="mode active">Live (Redis)</button>
+          <button id="modeReplay" class="mode">Replay (MongoDB)</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <span class="control-label">Simulation</span>
+        <div class="sim" role="group" aria-label="Simulation">
+          <button id="btnStart">Start</button>
+          <button id="btnPause">Pause</button>
+          <button id="btnReset">Reset</button>
+          <button id="btnFF">Generate 300 ticks</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <details class="system-status">
+    <summary>
+      <span>Database status</span>
+      <span class="summary-note">Tick, Redis keys, and MongoDB shard record counts</span>
+    </summary>
+    <div class="pills">
+      <span class="pill" id="pTick">Tick 0 / 0</span>
+      <span class="pill" id="pRedis">Redis keys 0</span>
+      <span class="pill" id="pShardA">Shard A 0 docs</span>
+      <span class="pill" id="pShardB">Shard B 0 docs</span>
+      <span class="pill source" id="pSource">Source: -</span>
+    </div>
+  </details>
+
+  <div id="ticker" class="ticker">
+    <span class="ticker-label">WORLD LOG</span>
+    <div id="tickerInner" class="ticker-inner"></div>
   </div>
 
-  <div id="ticker" class="ticker"><div id="tickerInner" class="ticker-inner"></div></div>
-
   <main>
-    <section class="stage">
+    <section class="stage" aria-labelledby="worldHeading">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">WORLD VIEW</span>
+          <h2 id="worldHeading">The settlement</h2>
+        </div>
+        <p>Click a character to inspect their memory. Use Replay to explore recorded history.</p>
+      </div>
       <div class="canvas-wrap">
         <canvas id="map"></canvas>
         <div id="hint" class="hint"></div>
@@ -58,15 +90,22 @@
       <div class="legend" id="legend"></div>
     </section>
 
-    <aside>
-      <div class="tabs">
-        <button class="tab active" data-tab="npc">NPC</button>
-        <button class="tab" data-tab="lab">Query Lab</button>
-        <button class="tab" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
-        <button class="tab" data-tab="concepts">Concepts</button>
+    <section class="workspace" aria-labelledby="workspaceHeading">
+      <div class="workspace-heading">
+        <div>
+          <span class="eyebrow">FIELD TOOLS</span>
+          <h2 id="workspaceHeading">Explore memory and data</h2>
+        </div>
+        <p>Choose one tool at a time. Query results and explanations appear here.</p>
       </div>
+      <nav class="tabs" role="tablist" aria-label="Field tools">
+        <button id="toolNpc" class="tab active" role="tab" aria-controls="tab-npc" aria-selected="true" data-tab="npc">NPC profile</button>
+        <button id="toolLab" class="tab" role="tab" aria-controls="tab-lab" aria-selected="false" data-tab="lab">Query Lab</button>
+        <button id="toolAlerts" class="tab" role="tab" aria-controls="tab-alerts" aria-selected="false" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
+        <button id="toolConcepts" class="tab" role="tab" aria-controls="tab-concepts" aria-selected="false" data-tab="concepts">Concepts</button>
+      </nav>
 
-      <div id="tab-npc" class="tabpane active">
+      <div id="tab-npc" class="tabpane active" role="tabpanel" aria-labelledby="toolNpc">
         <div id="npcEmpty" class="empty">Click any character on the map to see what it remembers.</div>
         <div id="npcCard" hidden>
           <h2 id="npcName"></h2>
@@ -83,47 +122,53 @@
         </div>
       </div>
 
-      <div id="tab-lab" class="tabpane">
-        <h3>Spatial query</h3>
-        <p class="note">Pick a place on the map, then ask both databases who is or was there.</p>
-        <div class="row">
-          <button id="btnProbe">Place probe on map</button>
-          <span id="zoneChips"></span>
-        </div>
-        <label class="field">Radius <span id="radiusVal"></span>
-          <input type="range" id="radius" min="2" max="40" value="12">
-        </label>
-        <div class="row">
-          <label class="field small">From tick <input type="number" id="qFrom" value="1" min="1"></label>
-          <label class="field small">To tick <input type="number" id="qTo" value="400" min="1"></label>
-        </div>
-        <button id="btnRun" class="primary">Run spatial query</button>
-        <button id="btnBenchmark">Compare: with index vs without</button>
-        <div id="queryShown" class="query-shown"></div>
-        <div id="labResult"></div>
-        <div id="benchResult"></div>
+      <div id="tab-lab" class="tabpane" role="tabpanel" aria-labelledby="toolLab">
+        <div class="query-grid">
+          <section class="query-card">
+            <h3>Spatial query</h3>
+            <p class="note">Pick a place on the map, then ask both databases who is or was there.</p>
+            <div class="row">
+              <button id="btnProbe">Place probe on map</button>
+              <span id="zoneChips"></span>
+            </div>
+            <label class="field">Radius <span id="radiusVal"></span>
+              <input type="range" id="radius" min="2" max="40" value="12">
+            </label>
+            <div class="row">
+              <label class="field small">From tick <input type="number" id="qFrom" value="1" min="1"></label>
+              <label class="field small">To tick <input type="number" id="qTo" value="400" min="1"></label>
+            </div>
+            <button id="btnRun" class="primary">Run spatial query</button>
+            <button id="btnBenchmark">Compare: with index vs without</button>
+            <div id="queryShown" class="query-shown"></div>
+            <div id="labResult"></div>
+            <div id="benchResult"></div>
+          </section>
 
-        <h3>Memory query</h3>
-        <p class="note">Ask what one character was doing between two moments.</p>
-        <div class="row">
-          <select id="memNpc"></select>
-          <label class="field small">From <input type="number" id="mFrom" value="1" min="1"></label>
-          <label class="field small">To <input type="number" id="mTo" value="100" min="1"></label>
+          <section class="query-card">
+            <h3>Memory query</h3>
+            <p class="note">Ask what one character was doing between two moments.</p>
+            <div class="row">
+              <select id="memNpc"></select>
+              <label class="field small">From <input type="number" id="mFrom" value="1" min="1"></label>
+              <label class="field small">To <input type="number" id="mTo" value="100" min="1"></label>
+            </div>
+            <button id="btnMem" class="primary">Run memory query</button>
+            <div id="memResult"></div>
+          </section>
         </div>
-        <button id="btnMem" class="primary">Run memory query</button>
-        <div id="memResult"></div>
       </div>
 
-      <div id="tab-alerts" class="tabpane">
+      <div id="tab-alerts" class="tabpane" role="tabpanel" aria-labelledby="toolAlerts">
         <p class="note">The detector reads stored history and flags any character that covered more ground in one tick than the fastest legitimate movement allows.</p>
         <button id="btnScan">Scan history</button>
         <div id="alertList"></div>
       </div>
 
-      <div id="tab-concepts" class="tabpane">
+      <div id="tab-concepts" class="tabpane" role="tabpanel" aria-labelledby="toolConcepts">
         <div id="conceptCards"></div>
       </div>
-    </aside>
+    </section>
   </main>
 
   <div id="onboard" class="modal-backdrop" hidden>
