@@ -5,7 +5,7 @@ import time
 
 from .models import (
     NPC_IDS, WORLD_W, WORLD_H, ZONES, WALK_SPEED, FLEE_SPEED, DWELL_RANGE,
-    FLEE_CHANCE, MAX_TICKS, TICK_SECONDS, RANDOM_SEED, ANOMALY_NPC, ANOMALY_TICK,
+    FLEE_CHANCE, MAX_TICKS, TICK_SECONDS, ANOMALY_NPC, ANOMALY_TICK,
     NPC_ROLES,
 )
 from .writer import write_frame
@@ -34,7 +34,8 @@ class Engine:
         self._init_state()
 
     def _init_state(self):
-        self.rng = random.Random(RANDOM_SEED)
+        # Let Python seed the generator from system randomness for each new run.
+        self.rng = random.Random()
         self.tick = 0
         self.npcs = []
         for npc_id in NPC_IDS:
