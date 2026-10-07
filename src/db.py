@@ -30,6 +30,8 @@ def ensure_indexes():
     for col in shards:
         col.create_index([("location", "2dsphere")])
         col.create_index([("npc_id", 1), ("tick", 1)])
+        col.create_index([("npc_id", 1), ("run_id", 1), ("tick", 1)])
+        col.create_index([("run_id", 1), ("tick", 1)])
         col.create_index([("tick", 1)])
 
 

@@ -4,7 +4,7 @@ from .db import redis_client, shards, shard_index, GEO_KEY
 from .geo import to_geo
 
 
-def write_frame(tick, npcs):
+def write_frame(tick, npcs, run_id):
     now = datetime.now(timezone.utc)
     pipe = redis_client.pipeline()
     batches = [[], []]
@@ -19,7 +19,7 @@ def write_frame(tick, npcs):
         pipe.geoadd(GEO_KEY, (lon, lat, n["id"]))
 
         batches[shard_index(n["id"])].append({
-            "npc_id": n["id"], "tick": tick, "timestamp": now,
+            "run_id": run_id, "npc_id": n["id"], "tick": tick, "timestamp": now,
             "x": n["x"], "y": n["y"],
             "location": {"type": "Point", "coordinates": [lon, lat]},
             "activity": n["activity"], "zone": n["zone"] or "",

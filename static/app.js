@@ -47,6 +47,10 @@ function nameOf(id) {
   return n ? n.name : id;
 }
 
+function activeRunId() {
+  return (state.stats && state.stats.run_id) || state.meta.run_id;
+}
+
 function hueOf(id) {
   const i = state.meta.npcs.findIndex((x) => x.id === id);
   return (i * 30 + 10) % 360;
@@ -1555,9 +1559,10 @@ async function runSpatial() {
   showQuery(
     "Redis:  GEOSEARCH npc:live:positions FROMLONLAT <probe> BYRADIUS " + state.probe.r + "\n\n" +
     "MongoDB:  db.history.find({\n" +
+    "  run_id: \"" + activeRunId() + "\",\n" +
     "  location: { $geoWithin: { $centerSphere: [[<probe lon>, <probe lat>], radius] } },\n" +
     "  tick: { $gte: " + ($("qFrom").value || 1) + ", $lte: " + ($("qTo").value || state.meta.max_ticks) + " }\n" +
-    "})  -- run against both shards, results merged"
+    "})  -- current run, both shards queried and results merged"
   );
   try {
     const r = await api("/api/nearby?" + q.toString());
@@ -1594,8 +1599,9 @@ async function runMemory() {
   showQuery(
     "MongoDB:  shard_for(" + $("memNpc").value + ").find({\n" +
     "  npc_id: \"" + $("memNpc").value + "\",\n" +
+    "  run_id: \"" + activeRunId() + "\",\n" +
     "  tick: { $gte: " + ($("mFrom").value || 1) + ", $lte: " + ($("mTo").value || state.meta.max_ticks) + " }\n" +
-    "})  -- routed to exactly one shard, the other is never touched"
+    "})  -- current run, routed to exactly one shard"
   );
   try {
     const r = await api("/api/memory?" + q.toString());

@@ -6,7 +6,7 @@ from .geo import position_from_document
 from .models import NPC_IDS, NPC_NAMES, MAX_PLAUSIBLE_STEP
 
 
-def find_anomalies():
+def find_anomalies(run_id):
     """
     Speed-limit check over stored history: any NPC that covers more ground in
     one tick than the fastest legitimate movement is flagged. This is the same
@@ -19,7 +19,7 @@ def find_anomalies():
         }
         docs = list(
             shard_for(npc_id)
-            .find({"npc_id": npc_id}, projection)
+            .find({"npc_id": npc_id, "run_id": run_id}, projection)
             .sort("tick", 1)
         )
         steps = []

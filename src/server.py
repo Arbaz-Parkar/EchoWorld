@@ -25,6 +25,7 @@ def check_npc(npc_id):
 @app.get("/api/meta")
 def meta():
     return {
+        "run_id": engine.run_id,
         "world": {"w": WORLD_W, "h": WORLD_H, "meters_per_unit": METERS_PER_UNIT},
         "zones": ZONES,
         "activities": ACTIVITY_COLORS,
@@ -40,7 +41,12 @@ def meta():
 @app.get("/api/stats")
 def stats():
     data = queries.stats()
-    data.update({"running": engine.running, "tick": engine.tick, "max_ticks": MAX_TICKS})
+    data.update({
+        "run_id": engine.run_id,
+        "running": engine.running,
+        "tick": engine.tick,
+        "max_ticks": MAX_TICKS,
+    })
     return data
 
 
@@ -75,19 +81,19 @@ def live():
 
 @app.get("/api/frames")
 def frames(start: int = Query(1, ge=1), end: int = Query(MAX_TICKS, ge=1)):
-    return queries.frames(start, end)
+    return queries.frames(start, end, engine.run_id)
 
 
 @app.get("/api/npc/{npc_id}")
 def npc(npc_id: str):
     check_npc(npc_id)
-    return queries.npc_profile(npc_id)
+    return queries.npc_profile(npc_id, engine.run_id)
 
 
 @app.get("/api/memory")
 def memory(npc: str, t_from: int = Query(1, ge=1), t_to: int = Query(MAX_TICKS, ge=1)):
     check_npc(npc)
-    return queries.memory(npc, t_from, t_to)
+    return queries.memory(npc, t_from, t_to, engine.run_id)
 
 
 @app.get("/api/nearby")
@@ -96,7 +102,7 @@ def nearby(
     radius: float = Query(10, ge=1, le=60),
     t_from: int = Query(1, ge=1), t_to: int = Query(MAX_TICKS, ge=1),
 ):
-    return queries.nearby(x, y, radius, t_from, t_to)
+    return queries.nearby(x, y, radius, t_from, t_to, engine.run_id)
 
 
 @app.get("/api/index_benchmark")
@@ -106,7 +112,7 @@ def index_benchmark(x: float, y: float, radius: float = Query(10, ge=1, le=60)):
 
 @app.get("/api/anomalies")
 def anomalies():
-    return analytics.find_anomalies()
+    return analytics.find_anomalies(engine.run_id)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

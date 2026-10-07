@@ -47,12 +47,13 @@ def live_snapshot():
     return {"tick": int(results[-1] or 0), "npcs": npcs, "ms": round(ms, 3), "source": "redis"}
 
 
-def frames(start, end):
-    """Scatter-gather: asks every shard for a tick range and merges the answers."""
+def frames(start, end, run_id):
+    """Scatter-gather one run's tick range across the history shards."""
     t0 = time.perf_counter()
     by_tick = defaultdict(list)
+    query = {"run_id": run_id, "tick": {"$gte": start, "$lte": end}}
     for col in shards:
-        for d in col.find({"tick": {"$gte": start, "$lte": end}}, PROJECTION):
+        for d in col.find(query, PROJECTION):
             by_tick[d["tick"]].append(_npc_view(d))
     out = [
         {"tick": t, "npcs": sorted(by_tick[t], key=lambda n: n["id"])}
@@ -78,25 +79,31 @@ def _segments(docs):
     return segments
 
 
-def memory(npc_id, t_from, t_to):
-    """Temporal query routed to the single shard that owns this NPC."""
+def memory(npc_id, t_from, t_to, run_id):
+    """Temporal query routed to one shard and limited to the active run."""
     t0 = time.perf_counter()
     col = shard_for(npc_id)
     docs = list(
-        col.find({"npc_id": npc_id, "tick": {"$gte": t_from, "$lte": t_to}}, PROJECTION)
+        col.find({
+            "npc_id": npc_id, "run_id": run_id,
+            "tick": {"$gte": t_from, "$lte": t_to},
+        }, PROJECTION)
         .sort("tick", 1)
     )
     ms = (time.perf_counter() - t0) * 1000
     return {
-        "npc_id": npc_id, "segments": _segments(docs), "records": len(docs),
+        "npc_id": npc_id, "run_id": run_id,
+        "segments": _segments(docs), "records": len(docs),
         "shard": SHARD_LABELS[shard_index(npc_id)], "ms": round(ms, 3),
     }
 
 
-def npc_profile(npc_id):
+def npc_profile(npc_id, run_id):
     t0 = time.perf_counter()
     col = shard_for(npc_id)
-    docs = list(col.find({"npc_id": npc_id}, PROJECTION).sort("tick", 1))
+    docs = list(
+        col.find({"npc_id": npc_id, "run_id": run_id}, PROJECTION).sort("tick", 1)
+    )
     ms_history = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
@@ -123,6 +130,7 @@ def npc_profile(npc_id):
 
     return {
         "npc_id": npc_id,
+        "run_id": run_id,
         "shard": SHARD_LABELS[shard_index(npc_id)],
         "records": len(docs),
         "distance": round(distance, 1),
@@ -136,8 +144,8 @@ def npc_profile(npc_id):
     }
 
 
-def nearby(x, y, radius_units, t_from, t_to):
-    """Runs the same spatial question against both layers."""
+def nearby(x, y, radius_units, t_from, t_to, run_id):
+    """Runs the same spatial question against both layers for the active run."""
     lon, lat = to_geo(x, y)
     radius_m = units_to_meters(radius_units)
 
@@ -154,6 +162,7 @@ def nearby(x, y, radius_units, t_from, t_to):
 
     t1 = time.perf_counter()
     query = {
+        "run_id": run_id,
         "location": {"$geoWithin": {"$centerSphere": [[lon, lat], radius_m / 1000.0 / EARTH_RADIUS_KM]}},
         "tick": {"$gte": t_from, "$lte": t_to},
     }
@@ -174,6 +183,7 @@ def nearby(x, y, radius_units, t_from, t_to):
         key=lambda r: -r["ticks"],
     )
     return {
+        "run_id": run_id,
         "live": live,
         "history": {"records": total, "per_npc": per_npc, "points": points},
         "ms_live": round(ms_live, 3),

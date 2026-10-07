@@ -2,6 +2,7 @@ import math
 import random
 import threading
 import time
+import uuid
 
 from .models import (
     NPC_IDS, WORLD_W, WORLD_H, ZONES, WALK_SPEED, FLEE_SPEED, DWELL_RANGE,
@@ -34,6 +35,8 @@ class Engine:
         self._init_state()
 
     def _init_state(self):
+        # Keep equal tick numbers from separate process runs in separate histories.
+        self.run_id = uuid.uuid4().hex
         # Let Python seed the generator from system randomness for each new run.
         self.rng = random.Random()
         self.tick = 0
@@ -134,7 +137,7 @@ class Engine:
                  "zone": n["zone"], "target": n["target"]}
                 for n in self.npcs
             ]
-            write_frame(self.tick, frame)
+            write_frame(self.tick, frame, self.run_id)
 
     def _loop(self):
         while self.running and self.tick < MAX_TICKS:
