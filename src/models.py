@@ -27,10 +27,14 @@ ACTIVITY_COLORS = {
 }
 
 ZONES = [
-    {"name": "Market", "x": 25, "y": 55, "r": 11, "activity": "trading", "color": "#8d6e2f"},
-    {"name": "Tavern", "x": 72, "y": 60, "r": 9, "activity": "idle", "color": "#6d4c41"},
-    {"name": "Barracks", "x": 75, "y": 20, "r": 11, "activity": "fighting", "color": "#7b3f3f"},
-    {"name": "Watchtower", "x": 22, "y": 18, "r": 8, "activity": "patrolling", "color": "#3f6b4a"},
+    {"name": "Market", "x": 29, "y": 44, "r": 8, "activity": "trading", "color": "#a27639", "building": "market"},
+    {"name": "Tavern", "x": 72, "y": 44, "r": 8, "activity": "idle", "color": "#8c5b3f", "building": "tavern"},
+    {"name": "Barracks", "x": 75, "y": 61, "r": 7, "activity": "fighting", "color": "#87534b", "building": "barracks"},
+    {"name": "Watchtower", "x": 23, "y": 61, "r": 6, "activity": "patrolling", "color": "#56734e", "building": "watchtower"},
+    {"name": "High Hall", "x": 50, "y": 17, "r": 7, "activity": "patrolling", "color": "#8b7958", "building": "high_hall"},
+    {"name": "Temple", "x": 25, "y": 25, "r": 6, "activity": "idle", "color": "#9a8965", "building": "temple"},
+    {"name": "Forge", "x": 75, "y": 24, "r": 6, "activity": "trading", "color": "#855544", "building": "forge"},
+    {"name": "Stables", "x": 62, "y": 64, "r": 6, "activity": "idle", "color": "#806548", "building": "stables"},
 ]
 
 WALK_SPEED = 1.4

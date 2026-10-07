@@ -603,6 +603,7 @@ function buildScenery() {
   const w = state.meta.world.w;
   const h = state.meta.world.h;
   const rand = mulberry32(7);
+  const inCity = (x, y) => ((x - 50) / 46) ** 2 + ((y - 40) / 34) ** 2 < 1;
   const inAnyZone = (x, y, pad) =>
     state.meta.zones.some((z) => Math.hypot(x - z.x, y - z.y) < z.r + pad);
 
@@ -626,9 +627,9 @@ function buildScenery() {
 
   const props = [];
   const kinds = ["tree", "tree", "rock", "bush"];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 75; i++) {
     const x = rand() * w, y = rand() * h;
-    if (inAnyZone(x, y, 6)) continue;
+    if (inCity(x, y) || inAnyZone(x, y, 6)) continue;
     props.push({ x, y, kind: kinds[Math.floor(rand() * kinds.length)], scale: 0.7 + rand() * 0.6 });
   }
 
@@ -637,7 +638,23 @@ function buildScenery() {
     fireflies.push({ x: rand() * w, y: rand() * h, phase: rand() * Math.PI * 2, speed: 0.3 + rand() * 0.4 });
   }
 
-  state.scenery = { ground, grass, props, fireflies };
+  const houses = [];
+  const roofColors = ["#594337", "#674b3b", "#4e4b43", "#76533a"];
+  state.meta.zones.forEach((z, zoneIndex) => {
+    const dx = 50 - z.x, dy = 40 - z.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const offset = z.r + 3.1;
+    for (const side of [-1, 1]) {
+      const x = z.x - dy / length * offset * side;
+      const y = z.y + dx / length * offset * side;
+      const crowded = state.meta.zones.some((other) => other !== z &&
+        Math.hypot(x - other.x, y - other.y) < other.r + 2.6);
+      if (x < 3 || x > w - 3 || y < 3 || y > h - 3 || crowded) continue;
+      houses.push({ x, y, roof: roofColors[(zoneIndex + (side > 0 ? 1 : 0)) % roofColors.length], scale: 0.82 + (zoneIndex % 3) * 0.08 });
+    }
+  });
+
+  state.scenery = { ground, grass, props, fireflies, houses };
 }
 
 function drawProp(p) {
@@ -734,7 +751,10 @@ function draw(t) {
   ctx.clearRect(0, 0, W, H);
   drawGround(W, H);
   drawScenery();
+  drawCityWall();
+  drawCitadel();
   drawRoadNetwork();
+  drawCityBlocks();
   drawZones();
   if (state.showTrails) drawTrails();
   drawProbe();
@@ -759,6 +779,24 @@ function drawGround(W, H) {
   ctx.fillStyle = clearing;
   ctx.fillRect(0, 0, W, H);
 
+  const city = ctx.createLinearGradient(0, H * 0.08, 0, H * 0.94);
+  city.addColorStop(0, "#746b56");
+  city.addColorStop(0.48, "#625b49");
+  city.addColorStop(1, "#504c40");
+  ctx.fillStyle = city;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.5, H * 0.5, W * 0.46, H * 0.425, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(221,199,154,0.13)";
+  ctx.lineWidth = Math.max(1, scale * 0.48);
+  ctx.stroke();
+
+  const hill = ctx.createRadialGradient(W * 0.5, H * 0.16, 0, W * 0.5, H * 0.16, W * 0.2);
+  hill.addColorStop(0, "rgba(202,181,136,0.19)");
+  hill.addColorStop(1, "rgba(202,181,136,0)");
+  ctx.fillStyle = hill;
+  ctx.fillRect(0, 0, W, H * 0.5);
+
   ctx.strokeStyle = "rgba(221,225,176,0.025)";
   ctx.lineWidth = Math.max(1, dpr * 0.5);
   for (let x = 0; x <= state.meta.world.w; x += 10) {
@@ -773,6 +811,157 @@ function drawGround(W, H) {
     ctx.lineTo(W, y * scale);
     ctx.stroke();
   }
+}
+
+function drawCityWall() {
+  const cx = 50, cy = 40, rx = 45, ry = 34;
+  const arcs = [[0, 1.45], [1.69, Math.PI * 2]];
+  ctx.lineCap = "round";
+  for (const layer of [
+    { color: "rgba(25,25,22,0.72)", width: 2.3 },
+    { color: "#554f43", width: 1.8 },
+    { color: "#a99b7d", width: 0.72 },
+  ]) {
+    ctx.strokeStyle = layer.color;
+    ctx.lineWidth = scale * layer.width;
+    for (const [start, end] of arcs) {
+      ctx.beginPath();
+      ctx.ellipse(cx * scale, cy * scale, rx * scale, ry * scale, 0, start, end);
+      ctx.stroke();
+    }
+  }
+
+  ctx.strokeStyle = "rgba(217,202,170,0.46)";
+  ctx.lineWidth = Math.max(1, scale * 0.12);
+  for (let angle = 0.025; angle < Math.PI * 2; angle += 0.055) {
+    if (angle > 1.41 && angle < 1.73) continue;
+    const x = cx + Math.cos(angle) * rx;
+    const y = cy + Math.sin(angle) * ry;
+    const tx = -Math.sin(angle), ty = Math.cos(angle);
+    ctx.beginPath();
+    ctx.moveTo((x - tx * 0.28) * scale, (y - ty * 0.28) * scale);
+    ctx.lineTo((x + tx * 0.28) * scale, (y + ty * 0.28) * scale);
+    ctx.stroke();
+  }
+
+  const towers = [
+    [50, 6], [78, 10], [94, 25], [95, 50],
+    [80, 67], [20, 67], [5, 50], [6, 25], [22, 10],
+  ];
+  for (const [x, y] of towers) drawWallTower(x, y);
+  drawGatehouse();
+}
+
+function drawCitadel() {
+  ctx.save();
+  ctx.translate(50 * scale, 17 * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(17,18,17,0.32)";
+  ctx.beginPath(); ctx.ellipse(0, 1.7, 14.2, 8.7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#4e4b40";
+  ctx.beginPath(); ctx.ellipse(0, 0, 13.8, 8.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#746b56";
+  ctx.beginPath(); ctx.ellipse(0, -0.35, 11.6, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#b3a17d"; ctx.lineWidth = 0.2;
+  ctx.beginPath(); ctx.ellipse(0, -0.35, 9.5, 5.2, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#8b7d60";
+  ctx.beginPath(); ctx.ellipse(0, -0.75, 7.7, 4.1, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#6c604d";
+  for (let i = 0; i < 4; i++) {
+    rr(ctx, -2.7 + i * 1.45, 6.3 + i * 0.56, 5.4 - i * 0.9, 0.42, 0.12);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCottage(house) {
+  ctx.save();
+  ctx.translate(house.x * scale, house.y * scale);
+  ctx.scale(scale * house.scale, scale * house.scale);
+  ctx.fillStyle = "rgba(22,19,16,0.32)";
+  ctx.beginPath(); ctx.ellipse(0.2, 0.6, 2.7, 1.25, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#554838";
+  ctx.beginPath();
+  ctx.moveTo(-2.25, -1.9); ctx.lineTo(0, -3.05); ctx.lineTo(2.25, -1.9);
+  ctx.lineTo(2.05, 0.35); ctx.lineTo(-1.95, 0.35); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#a98e68";
+  ctx.beginPath();
+  ctx.moveTo(-1.75, -1.65); ctx.lineTo(0, -2.55); ctx.lineTo(1.75, -1.65);
+  ctx.lineTo(1.75, -0.15); ctx.lineTo(-1.75, -0.15); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = house.roof;
+  ctx.beginPath();
+  ctx.moveTo(-2.55, -1.8); ctx.lineTo(0, -3.35); ctx.lineTo(2.55, -1.8);
+  ctx.lineTo(1.95, -0.72); ctx.lineTo(0, -1.9); ctx.lineTo(-1.95, -0.72); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(218,191,147,0.56)"; ctx.lineWidth = 0.11;
+  for (const x of [-1.65, -0.85, 0, 0.85, 1.65]) {
+    ctx.beginPath(); ctx.moveTo(x, -2.12 + Math.abs(x) * 0.12); ctx.lineTo(x * 0.55, -1.9); ctx.stroke();
+  }
+  ctx.fillStyle = "#4b3729";
+  rr(ctx, -0.48, -1.35, 0.96, 1.7, 0.26); ctx.fill();
+  ctx.fillStyle = "#e4bc69";
+  ctx.fillRect(-1.45, -1.45, 0.42, 0.5);
+  ctx.fillRect(1.02, -1.45, 0.42, 0.5);
+  ctx.fillStyle = "#57483a";
+  ctx.fillRect(1.25, -2.95, 0.52, 1.0);
+  ctx.fillStyle = "#8d7a60";
+  ctx.fillRect(1.18, -3.08, 0.66, 0.2);
+  ctx.restore();
+}
+
+function drawCityBlocks() {
+  if (!state.scenery) return;
+  const houses = state.scenery.houses.slice().sort((a, b) => a.y - b.y);
+  for (const house of houses) drawCottage(house);
+}
+
+function drawWallTower(x, y) {
+  ctx.save();
+  ctx.translate(x * scale, y * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(18,19,17,0.36)";
+  ctx.beginPath(); ctx.ellipse(0, 0.65, 2.2, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#4e493f";
+  ctx.beginPath(); ctx.ellipse(0, 0, 2.05, 1.75, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#928a76";
+  ctx.beginPath(); ctx.ellipse(0, -0.18, 1.68, 1.38, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#c0b18c"; ctx.lineWidth = 0.13;
+  ctx.beginPath(); ctx.ellipse(0, -0.18, 1.27, 1.02, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#5c5548";
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    ctx.fillRect(Math.cos(a) * 1.48 - 0.22, Math.sin(a) * 1.22 - 0.22, 0.44, 0.44);
+  }
+  ctx.fillStyle = "#3e3a33";
+  ctx.beginPath(); ctx.arc(0, 0, 0.38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawGatehouse() {
+  ctx.save();
+  ctx.translate(50 * scale, 73.3 * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(17,18,16,0.44)";
+  ctx.beginPath(); ctx.ellipse(0, 1.45, 7.1, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#575145";
+  rr(ctx, -6.6, -1.8, 13.2, 3.3, 0.35); ctx.fill();
+  ctx.fillStyle = "#a09882";
+  rr(ctx, -5.9, -2.2, 11.8, 2.9, 0.25); ctx.fill();
+  ctx.fillStyle = "#39372f";
+  ctx.beginPath();
+  ctx.moveTo(-1.9, 0.7); ctx.lineTo(-1.9, -0.95);
+  ctx.quadraticCurveTo(0, -3.2, 1.9, -0.95); ctx.lineTo(1.9, 0.7); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#7e7158";
+  for (const x of [-5.35, 5.35]) {
+    rr(ctx, x - 1.15, -3.4, 2.3, 4.8, 0.18); ctx.fill();
+    ctx.fillStyle = "#c1b18e";
+    for (let i = -0.75; i <= 0.76; i += 0.75) ctx.fillRect(x + i - 0.24, -3.72, 0.48, 0.42);
+    ctx.fillStyle = "#7e7158";
+  }
+  ctx.strokeStyle = "#c09a58"; ctx.lineWidth = 0.14;
+  for (let x = -1.15; x <= 1.16; x += 0.58) {
+    ctx.beginPath(); ctx.moveTo(x, -0.25); ctx.lineTo(x, 0.62); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function routeForZone(z) {
@@ -814,6 +1003,15 @@ function drawRoadNetwork() {
   for (const layer of layers) {
     ctx.strokeStyle = layer.color;
     ctx.lineWidth = scale * layer.width;
+    ctx.beginPath();
+    ctx.ellipse(50 * scale, 40 * scale, 22 * scale, 16 * scale, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(50 * scale, 73 * scale);
+    ctx.bezierCurveTo(48.8 * scale, 63 * scale, 51.2 * scale, 53 * scale, 50 * scale, 44 * scale);
+    ctx.stroke();
+
     for (const route of routes) {
       ctx.beginPath();
       ctx.moveTo(route.start.x * scale, route.start.y * scale);
@@ -840,11 +1038,15 @@ function drawRoadNetwork() {
 
 function drawClearing(z) {
   const cx = z.x * scale, cy = z.y * scale;
-  ctx.fillStyle = "rgba(178,151,101,0.24)";
+  const hex = z.color || "#b29765";
+  const rgb = hex.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+  ctx.fillStyle = rgb
+    ? "rgba(" + parseInt(rgb[1], 16) + "," + parseInt(rgb[2], 16) + "," + parseInt(rgb[3], 16) + ",0.2)"
+    : "rgba(178,151,101,0.2)";
   ctx.beginPath();
   ctx.ellipse(cx, cy, z.r * 1.2 * scale, z.r * 0.82 * scale, -0.08, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(219,191,139,0.22)";
+  ctx.strokeStyle = "rgba(219,191,139,0.3)";
   ctx.lineWidth = Math.max(1, scale * 0.12);
   ctx.stroke();
 }
@@ -1053,6 +1255,124 @@ function drawWatchtowerBuilding(z) {
   ctx.restore();
 }
 
+function drawHighHallBuilding(z) {
+  ctx.save();
+  ctx.translate(z.x * scale, (z.y - 1.8) * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(20,18,16,0.38)";
+  ctx.beginPath(); ctx.ellipse(0, 2.2, 7.6, 2.1, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#4b473e";
+  rr(ctx, -7.2, -4.2, 14.4, 7, 0.5); ctx.fill();
+  ctx.fillStyle = "#927f5e";
+  rr(ctx, -6.25, -4.55, 12.5, 6.6, 0.35); ctx.fill();
+  ctx.fillStyle = "#49392e";
+  ctx.beginPath();
+  ctx.moveTo(-7.1, -3.7); ctx.lineTo(-4.4, -6.1); ctx.lineTo(0, -7.9);
+  ctx.lineTo(4.4, -6.1); ctx.lineTo(7.1, -3.7); ctx.lineTo(5.6, -2.9);
+  ctx.lineTo(0, -5.7); ctx.lineTo(-5.6, -2.9); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#72533b";
+  ctx.beginPath();
+  ctx.moveTo(-5.8, -3.7); ctx.lineTo(-3.6, -5.6); ctx.lineTo(0, -7.1);
+  ctx.lineTo(3.6, -5.6); ctx.lineTo(5.8, -3.7); ctx.lineTo(0, -6.1); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(204,171,119,0.55)"; ctx.lineWidth = 0.15;
+  for (let x = -5.5; x <= 5.51; x += 1.1) {
+    ctx.beginPath(); ctx.moveTo(x, -3.3); ctx.lineTo(x * 0.62, -5.9 + Math.abs(x) * 0.18); ctx.stroke();
+  }
+  ctx.fillStyle = "#392d24";
+  rr(ctx, -1.05, -2.5, 2.1, 4.35, 0.5); ctx.fill();
+  ctx.fillStyle = "#d6b778";
+  rr(ctx, -0.8, -2.35, 1.6, 1.08, 0.4); ctx.fill();
+  ctx.fillStyle = "#453629";
+  rr(ctx, -0.72, -2.15, 1.44, 3.9, 0.48); ctx.fill();
+  ctx.fillStyle = "#dbb66a";
+  for (const x of [-4.6, 4.6]) {
+    ctx.fillRect(x - 0.2, -2.8, 0.4, 0.85);
+    ctx.fillStyle = "#963f35";
+    ctx.beginPath(); ctx.moveTo(x, -1.95); ctx.lineTo(x + 1.15, -1.55); ctx.lineTo(x, -1.15); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#dbb66a";
+  }
+  ctx.restore();
+}
+
+function drawTempleBuilding(z) {
+  ctx.save();
+  ctx.translate(z.x * scale, (z.y - 1.6) * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(18,19,17,0.35)";
+  ctx.beginPath(); ctx.ellipse(0, 2, 5.8, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#5b5548"; rr(ctx, -5.2, -3.1, 10.4, 5.1, 0.35); ctx.fill();
+  ctx.fillStyle = "#b0a183"; rr(ctx, -4.65, -3.5, 9.3, 4.75, 0.25); ctx.fill();
+  ctx.fillStyle = "#4c4a44";
+  ctx.beginPath(); ctx.moveTo(-5.8, -3.1); ctx.lineTo(-3.2, -5.8); ctx.lineTo(0, -7.1);
+  ctx.lineTo(3.2, -5.8); ctx.lineTo(5.8, -3.1); ctx.lineTo(0, -4.7); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#6d746d";
+  ctx.beginPath(); ctx.moveTo(-4.5, -3.2); ctx.lineTo(-2.6, -5.1); ctx.lineTo(0, -6.2);
+  ctx.lineTo(2.6, -5.1); ctx.lineTo(4.5, -3.2); ctx.lineTo(0, -4.55); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#756b55";
+  for (const x of [-3.7, -1.9, 1.9, 3.7]) {
+    rr(ctx, x - 0.25, -3.45, 0.5, 4.25, 0.18);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#40372d";
+  ctx.beginPath(); ctx.moveTo(-1, 1.3); ctx.lineTo(-1, -0.7); ctx.quadraticCurveTo(0, -2.4, 1, -0.7); ctx.lineTo(1, 1.3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#d0b47e";
+  ctx.beginPath(); ctx.arc(0, -5.2, 0.48, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawForgeBuilding(z) {
+  ctx.save();
+  ctx.translate(z.x * scale, (z.y - 1.5) * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(16,16,15,0.38)";
+  ctx.beginPath(); ctx.ellipse(0, 2.1, 5.8, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#51483b"; rr(ctx, -4.9, -2.6, 9.8, 4.6, 0.25); ctx.fill();
+  ctx.fillStyle = "#82735b"; rr(ctx, -4.25, -3.3, 8.5, 5.1, 0.2); ctx.fill();
+  ctx.fillStyle = "#38332d";
+  ctx.beginPath(); ctx.moveTo(-5.3, -3.05); ctx.lineTo(-2.6, -5.8); ctx.lineTo(0, -6.8);
+  ctx.lineTo(3.2, -5.25); ctx.lineTo(5.1, -3.05); ctx.lineTo(0, -4.8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#58463a";
+  ctx.beginPath(); ctx.moveTo(-3.9, -3.05); ctx.lineTo(-1.8, -5.1); ctx.lineTo(0, -5.9);
+  ctx.lineTo(2.4, -4.9); ctx.lineTo(3.9, -3.05); ctx.lineTo(0, -4.55); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#443d33"; rr(ctx, 2.4, -7.8, 1.65, 4.3, 0.2); ctx.fill();
+  ctx.fillStyle = "#d47a3a";
+  ctx.beginPath(); ctx.arc(3.2, -2.5, 0.68, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffca68";
+  ctx.beginPath(); ctx.arc(3.2, -2.5, 0.34, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#423a32"; rr(ctx, -1.4, 0.1, 1.8, 0.9, 0.18); ctx.fill();
+  ctx.fillStyle = "#c1a276"; rr(ctx, -1.15, -0.1, 1.2, 0.5, 0.16); ctx.fill();
+  ctx.strokeStyle = "#3c3630"; ctx.lineWidth = 0.28;
+  ctx.beginPath(); ctx.moveTo(-0.55, -0.15); ctx.lineTo(-0.55, -1.4); ctx.lineTo(0.55, -1.4); ctx.stroke();
+  ctx.restore();
+}
+
+function drawStablesBuilding(z) {
+  ctx.save();
+  ctx.translate(z.x * scale, (z.y - 1.4) * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(20,17,15,0.36)";
+  ctx.beginPath(); ctx.ellipse(0, 2.2, 6.2, 1.55, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#574638"; rr(ctx, -5.5, -2.7, 11, 4.8, 0.24); ctx.fill();
+  ctx.fillStyle = "#987650"; rr(ctx, -4.8, -3.2, 9.6, 4.7, 0.18); ctx.fill();
+  ctx.fillStyle = "#55402e";
+  ctx.beginPath(); ctx.moveTo(-5.8, -3); ctx.lineTo(-3.4, -5.4); ctx.lineTo(0, -6.9);
+  ctx.lineTo(3.4, -5.4); ctx.lineTo(5.8, -3); ctx.lineTo(0, -4.75); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#815b3f";
+  ctx.beginPath(); ctx.moveTo(-4.6, -3); ctx.lineTo(-2.8, -5); ctx.lineTo(0, -6.15);
+  ctx.lineTo(2.8, -5); ctx.lineTo(4.6, -3); ctx.lineTo(0, -4.65); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#4a3729"; ctx.lineWidth = 0.2;
+  for (const x of [-3, 0, 3]) {
+    rr(ctx, x - 1.05, -1.9, 2.1, 3.05, 0.2); ctx.fillStyle = "#624a35"; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#b48d5e"; ctx.fillRect(x - 0.84, -1.6, 1.68, 0.17);
+    ctx.fillStyle = "#4d392a"; ctx.fillRect(x - 0.62, -0.2, 1.24, 1.2);
+    ctx.fillStyle = "#c6a174";
+  }
+  ctx.fillStyle = "#d2b27d";
+  ctx.beginPath(); ctx.ellipse(-3.7, -2.2, 0.72, 0.46, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(3.7, -2.2, 0.72, 0.46, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 function drawZoneLabel(z) {
   const text = z.name.toUpperCase();
   ctx.font = "bold " + Math.round(11 * dpr) + "px system-ui, sans-serif";
@@ -1069,14 +1389,18 @@ function drawZoneLabel(z) {
 
 function drawZones() {
   drawCentralPlaza();
+  for (const z of state.meta.zones) drawClearing(z);
   for (const z of state.meta.zones) {
-    drawClearing(z);
-    if (z.name === "Market") drawMarketBuilding(z);
-    else if (z.name === "Tavern") drawTavernBuilding(z);
-    else if (z.name === "Barracks") drawBarracksBuilding(z);
-    else if (z.name === "Watchtower") drawWatchtowerBuilding(z);
-    drawZoneLabel(z);
+    if (z.building === "market") drawMarketBuilding(z);
+    else if (z.building === "tavern") drawTavernBuilding(z);
+    else if (z.building === "barracks") drawBarracksBuilding(z);
+    else if (z.building === "watchtower") drawWatchtowerBuilding(z);
+    else if (z.building === "high_hall") drawHighHallBuilding(z);
+    else if (z.building === "temple") drawTempleBuilding(z);
+    else if (z.building === "forge") drawForgeBuilding(z);
+    else if (z.building === "stables") drawStablesBuilding(z);
   }
+  for (const z of state.meta.zones) drawZoneLabel(z);
 }
 
 function trailFor(id) {
