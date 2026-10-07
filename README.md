@@ -1,14 +1,141 @@
 # EchoWorld
 
-A spatiotemporal NoSQL memory store for game NPCs, with a live browser
-front end. Redis holds each character's current position and activity;
-MongoDB (split across two shards) holds their full history, queryable by
-time and by location.
+EchoWorld is a small, interactive NPC world built to demonstrate how a game-like simulation can use different NoSQL databases for live state and historical memory. Watch characters move around the world, inspect what they were doing at earlier ticks, and compare spatial queries that use a MongoDB geospatial index with a collection scan.
 
-## Run it
+Each run starts with randomized NPC positions and behavior. The browser interface displays the world in a canvas and includes live and replay modes, character profiles, a Query Lab, and an anomaly alert view.
 
-1. Start the databases: `docker compose up -d`
-2. Create a virtual environment and install dependencies:
-   `python -m venv .venv` then activate it (`.venv\Scripts\activate`), then `pip install -r requirements.txt`
-3. Start the server: `python run.py`
-4. Open `http://127.0.0.1:8000` in your browser.
+## What it demonstrates
+
+- **Live state in Redis:** Each NPC's current state is stored as a Redis hash. Redis GEO supports nearby-character lookups.
+- **History in MongoDB:** Every simulation tick is stored as a document with the NPC's position, activity, zone, target, timestamp, and run ID.
+- **Temporal queries:** Inspect a character's history over a tick range and see consecutive activity periods grouped into segments.
+- **Spatial queries:** Find historical positions inside a radius using GeoJSON and a `2dsphere` index.
+- **Index comparison:** Compare an indexed spatial query with the same query forced to scan a MongoDB collection.
+- **Simple sharding model:** History is routed to one of two MongoDB collections based on NPC ID. Queries that need world-wide results gather data from both collections.
+- **Anomaly detection:** A movement-speed rule detects implausible jumps. NPC_03 deliberately teleports at tick 75 to demonstrate the alert.
+- **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    UI[Browser UI<br/>Canvas and controls] -->|HTTP API| API[FastAPI server<br/>simulation and queries]
+    API -->|Current state and GEO| Redis[(Redis)]
+    API -->|Tick history and geospatial queries| Mongo[(MongoDB)]
+    Mongo --> A[npc_history_shard_a]
+    Mongo --> B[npc_history_shard_b]
+```
+
+The simulation advances in ticks and writes each frame to both storage layers. Redis serves the latest NPC state; MongoDB keeps the history for replay and analysis. Each server process gets a new run ID, so replay, profiles, memory queries, and anomaly scans are scoped to that run.
+
+MongoDB's two collections are an educational sharding model implemented by the application. This project does not configure MongoDB's built-in cluster sharding.
+
+## Tech stack
+
+- Python, FastAPI, and Uvicorn
+- Redis for live NPC state and geospatial lookups
+- MongoDB for persistent history and geospatial indexes
+- Docker Compose for the database services
+- HTML, CSS, and JavaScript Canvas for the browser UI
+
+## Requirements
+
+- Python and pip
+- Docker Desktop (or Docker Engine with Docker Compose)
+- A browser
+
+The app expects MongoDB at `localhost:27017` and Redis at `localhost:6379`. These addresses are set in `src/config.py`.
+
+## Run locally (Windows PowerShell)
+
+1. Start Docker Desktop, then start the databases from the project directory:
+
+   ```powershell
+   docker compose up -d
+   ```
+
+2. Create and activate a virtual environment, then install the Python packages:
+
+   ```powershell
+   py -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
+   ```
+
+3. Start the web app:
+
+   ```powershell
+   python run.py
+   ```
+
+4. Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The interactive API reference is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+To stop the database containers, run `docker compose down`. Docker's named volumes retain their data when the containers stop.
+
+## Try a demo run
+
+1. Choose **Start** to watch the simulation advance in real time, or **Generate 300 ticks** to create history quickly.
+2. Switch to **Replay (MongoDB)** and scrub through the recorded frames.
+3. Select an NPC to inspect its current profile and historical activity.
+4. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
+5. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
+
+The world has 12 NPCs, four activity zones, and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
+
+## Data and reset behavior
+
+- Starting a new server process creates a new run ID and randomized NPC state. Previous MongoDB records remain stored, but run-specific views only show the active run.
+- The database status counters show collection totals, so they can include history from earlier runs.
+- The app's **Reset** control clears history from both MongoDB collections and clears the app's Redis state, then initializes a fresh run.
+- MongoDB and Redis use Docker named volumes. Stopping the containers with `docker compose down` preserves the data; use the app's Reset control to clear the EchoWorld data.
+
+## API overview
+
+The full interactive schema is available at `/docs`. The main routes are:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/meta` | World, NPC, zone, and simulation metadata |
+| `GET` | `/api/stats` | Database counts and current simulation status |
+| `GET` | `/api/live` | Current NPC snapshot from Redis |
+| `GET` | `/api/frames?start=1&end=400` | Recorded frames for the active run |
+| `GET` | `/api/npc/{npc_id}` | NPC profile and history summary |
+| `GET` | `/api/memory?npc=NPC_01&t_from=1&t_to=100` | One NPC's history over a tick range |
+| `GET` | `/api/nearby?x=50&y=40&radius=10&t_from=1&t_to=400` | Live and historical nearby-position query |
+| `GET` | `/api/index_benchmark?x=50&y=40&radius=10` | Compare indexed lookup and collection scan |
+| `GET` | `/api/anomalies` | Detect implausible movement in the active run |
+| `POST` | `/api/sim/start` | Start real-time simulation |
+| `POST` | `/api/sim/pause` | Pause real-time simulation |
+| `POST` | `/api/sim/reset` | Clear stored app data and initialize a new run |
+| `POST` | `/api/sim/fast_forward?ticks=300` | Advance the simulation without real-time delays |
+
+Coordinates `x` and `y` are expressed in world units. MongoDB records also store a GeoJSON point projected from the small world map so that geospatial operations use distances in meters.
+
+## Project structure
+
+```text
+EchoWorld/
+├── run.py                 # Starts the FastAPI app
+├── requirements.txt       # Python dependencies
+├── docker-compose.yml     # MongoDB and Redis services
+├── src/
+│   ├── server.py          # API routes and static UI hosting
+│   ├── engine.py          # Randomized tick-based NPC simulation
+│   ├── db.py              # Database clients, collections, and indexes
+│   ├── writer.py          # Writes live state and history
+│   ├── queries.py         # Temporal, spatial, and benchmark queries
+│   ├── analytics.py       # Movement anomaly detection
+│   ├── geo.py             # World-to-GeoJSON coordinate conversion
+│   └── models.py          # NPC, world, and simulation settings
+└── static/
+    ├── index.html         # Browser interface
+    ├── app.js             # UI behavior and API calls
+    └── style.css          # Interface styles
+```
+
+## Troubleshooting
+
+- **The app cannot connect to a database:** Check that Docker is running and that both containers are up with `docker compose ps`.
+- **A database port is already in use:** Free port `27017` or `6379`, or update the matching Compose port and the connection setting in `src/config.py`.
+- **Replay is empty:** Start the simulation or generate ticks first. Replay reads recorded MongoDB history for the active run.
+- **Old records remain in the status counters:** Those totals include earlier runs. Use the app's Reset control to clear EchoWorld's MongoDB history and Redis state.
