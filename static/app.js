@@ -638,22 +638,7 @@ function buildScenery() {
     fireflies.push({ x: rand() * w, y: rand() * h, phase: rand() * Math.PI * 2, speed: 0.3 + rand() * 0.4 });
   }
 
-  const houses = [];
-  const roofColors = ["#594337", "#674b3b", "#4e4b43", "#76533a"];
-  state.meta.zones.forEach((z, zoneIndex) => {
-    const dx = 50 - z.x, dy = 40 - z.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const offset = z.r + 3.1;
-    for (const side of [-1, 1]) {
-      const x = z.x - dy / length * offset * side;
-      const y = z.y + dx / length * offset * side;
-      const crowded = state.meta.zones.some((other) => other !== z &&
-        Math.hypot(x - other.x, y - other.y) < other.r + 2.6);
-      if (x < 3 || x > w - 3 || y < 3 || y > h - 3 || crowded) continue;
-      houses.push({ x, y, roof: roofColors[(zoneIndex + (side > 0 ? 1 : 0)) % roofColors.length], scale: 0.82 + (zoneIndex % 3) * 0.08 });
-    }
-  });
-
+  const houses = (state.meta.houses || []).map((house) => ({ ...house }));
   state.scenery = { ground, grass, props, fireflies, houses };
 }
 
@@ -968,12 +953,10 @@ function routeForZone(z) {
   const hub = { x: state.meta.world.w / 2, y: state.meta.world.h / 2 };
   const dx = hub.x - z.x, dy = hub.y - z.y;
   const length = Math.hypot(dx, dy) || 1;
-  const start = {
-    x: z.x + dx / length * z.r * 0.92,
-    y: z.y + dy / length * z.r * 0.92,
-  };
+  const start = { x: z.x, y: z.y + z.r * 0.8 };
   const bend = z.x < hub.x ? -2.4 : 2.4;
   return {
+    zone: z,
     start,
     control: {
       x: (start.x + hub.x) / 2 - dy / length * bend,
@@ -1019,6 +1002,11 @@ function drawRoadNetwork() {
         route.control.x * scale, route.control.y * scale,
         route.end.x * scale, route.end.y * scale,
       );
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(route.zone.x * scale, (route.zone.y + route.zone.r * 0.8) * scale);
+      ctx.lineTo(route.zone.x * scale, (route.zone.y + route.zone.r * 0.42) * scale);
       ctx.stroke();
     }
   }

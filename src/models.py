@@ -37,6 +37,35 @@ ZONES = [
     {"name": "Stables", "x": 62, "y": 64, "r": 6, "activity": "idle", "color": "#806548", "building": "stables"},
 ]
 
+# Elliptical movement blockers for the landmark footprints drawn on the map.
+# The extra breathing room keeps sprites from clipping through roof edges.
+CITY_BLOCKERS = [
+    {"x": 29, "y": 40, "rx": 5.4, "ry": 6.4},   # Market hall
+    {"x": 72, "y": 39, "rx": 5.7, "ry": 6.7},   # Tavern
+    {"x": 75, "y": 55.2, "rx": 5.8, "ry": 4.4}, # Barracks
+    {"x": 23, "y": 54.7, "rx": 4.8, "ry": 8.0}, # Watchtower
+    {"x": 50, "y": 12.4, "rx": 7.2, "ry": 5.4}, # High Hall
+    {"x": 25, "y": 20.5, "rx": 5.8, "ry": 4.5}, # Temple
+    {"x": 75, "y": 19.7, "rx": 5.3, "ry": 5.2}, # Forge
+    {"x": 62, "y": 60.4, "rx": 6.1, "ry": 4.6}, # Stables
+]
+
+# Fixed residential plots are shared by the renderer and navigation system.
+CITY_HOUSES = [
+    {"x": 31.1, "y": 54.9, "roof": "#594337", "scale": 0.82},
+    {"x": 74.0, "y": 33.1, "roof": "#674b3b", "scale": 0.9},
+    {"x": 81.5, "y": 53.3, "roof": "#4e4b43", "scale": 0.98},
+    {"x": 28.6, "y": 68.2, "roof": "#76533a", "scale": 0.82},
+    {"x": 17.4, "y": 53.8, "roof": "#594337", "scale": 0.82},
+    {"x": 39.9, "y": 17.0, "roof": "#674b3b", "scale": 0.9},
+    {"x": 60.1, "y": 17.0, "roof": "#4e4b43", "scale": 0.9},
+    {"x": 20.3, "y": 32.8, "roof": "#76533a", "scale": 0.98},
+    {"x": 29.7, "y": 17.2, "roof": "#594337", "scale": 0.98},
+    {"x": 70.1, "y": 16.3, "roof": "#674b3b", "scale": 0.82},
+    {"x": 79.9, "y": 31.7, "roof": "#4e4b43", "scale": 0.9},
+    {"x": 53.9, "y": 68.1, "roof": "#76533a", "scale": 0.98},
+]
+
 WALK_SPEED = 1.4
 FLEE_SPEED = 2.8
 DWELL_RANGE = (12, 35)

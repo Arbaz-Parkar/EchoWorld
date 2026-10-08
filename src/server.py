@@ -9,7 +9,7 @@ from .db import SHARD_LABELS, shard_index
 from .engine import engine
 from .models import (
     NPC_IDS, NPC_NAMES, NPC_ROLES, WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
-    MAX_TICKS, TICK_SECONDS, METERS_PER_UNIT,
+    CITY_HOUSES, MAX_TICKS, TICK_SECONDS, METERS_PER_UNIT,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -28,6 +28,7 @@ def meta():
         "run_id": engine.run_id,
         "world": {"w": WORLD_W, "h": WORLD_H, "meters_per_unit": METERS_PER_UNIT},
         "zones": ZONES,
+        "houses": CITY_HOUSES,
         "activities": ACTIVITY_COLORS,
         "npcs": [
             {"id": i, "name": NPC_NAMES[i], "role": NPC_ROLES[i], "shard": SHARD_LABELS[shard_index(i)]}
