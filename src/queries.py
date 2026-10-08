@@ -71,6 +71,64 @@ def frames(start, end, run_id):
     return {"frames": out, "ms": round(ms, 3), "source": "mongodb", "shards": SHARD_LABELS}
 
 
+def run_catalog(active_run_id, active_seed, active_npc_count, active_tick):
+    """Summarize saved runs without loading every historical frame into memory."""
+    pipeline = [
+        {"$match": {"run_id": {"$type": "string"}}},
+        {"$group": {
+            "_id": "$run_id",
+            "seed": {"$first": "$seed"},
+            "npc_count": {"$max": "$npc_count"},
+            "npc_ids": {"$addToSet": "$npc_id"},
+            "max_tick": {"$max": "$tick"},
+            "created_at": {"$min": "$timestamp"},
+            "records": {"$sum": 1},
+        }},
+    ]
+    catalog = {}
+    for col in shards:
+        for item in col.aggregate(pipeline):
+            run_id = item["_id"]
+            row = catalog.setdefault(run_id, {
+                "run_id": run_id, "seed": item.get("seed"), "npc_count": 0,
+                "npc_ids": set(), "max_tick": 0, "created_at": item.get("created_at"),
+                "records": 0,
+            })
+            if not row["seed"] and item.get("seed"):
+                row["seed"] = item["seed"]
+            row["npc_count"] = max(row["npc_count"], item.get("npc_count") or 0)
+            row["npc_ids"].update(item.get("npc_ids") or [])
+            row["max_tick"] = max(row["max_tick"], item.get("max_tick") or 0)
+            row["records"] += item.get("records") or 0
+            created_at = item.get("created_at")
+            if created_at and (row["created_at"] is None or created_at < row["created_at"]):
+                row["created_at"] = created_at
+
+    active = catalog.setdefault(active_run_id, {
+        "run_id": active_run_id, "seed": active_seed, "npc_count": active_npc_count,
+        "npc_ids": set(), "max_tick": 0, "created_at": None, "records": 0,
+    })
+    active.update({
+        "seed": active_seed, "npc_count": active_npc_count,
+        "max_tick": max(active["max_tick"], active_tick),
+    })
+
+    rows = []
+    for run_id, item in catalog.items():
+        created_at = item["created_at"]
+        rows.append({
+            "run_id": run_id,
+            "seed": item.get("seed"),
+            "npc_count": max(item["npc_count"], len(item["npc_ids"])),
+            "max_tick": item["max_tick"],
+            "records": item["records"],
+            "created_at": created_at.isoformat() if created_at else None,
+            "active": run_id == active_run_id,
+        })
+    rows.sort(key=lambda row: (row["active"], row["created_at"] or ""), reverse=True)
+    return rows
+
+
 def _segments(docs):
     segments = []
     for d in docs:

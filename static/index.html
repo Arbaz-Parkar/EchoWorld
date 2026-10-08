@@ -19,7 +19,7 @@
     <div class="control-intro">
       <span class="eyebrow">WORLD SIMULATION</span>
       <h2>Run the world</h2>
-      <p>Choose the data view, then start or generate a run.</p>
+      <p>Blank seed means random. Enter a seed and choose New run to repeat it.</p>
     </div>
     <div class="control-groups">
       <div class="control-group">
@@ -37,6 +37,14 @@
           <button id="btnReset">Reset</button>
           <button id="btnFF">Generate 300 ticks</button>
         </div>
+      </div>
+      <div class="control-group seed-group">
+        <label class="control-label" for="runSeed">Optional run seed</label>
+        <div class="seed-controls">
+          <input id="runSeed" type="text" maxlength="64" autocomplete="off" placeholder="Blank = random">
+          <button id="btnNewRun" type="button">New run</button>
+        </div>
+        <div class="seed-status"><span id="runSeedStatus" class="sub" aria-live="polite"></span><button id="btnCopySeed" type="button">Use current</button></div>
       </div>
     </div>
   </section>
@@ -132,6 +140,7 @@
         <button id="toolNpc" class="tab active" role="tab" aria-controls="tab-npc" aria-selected="true" data-tab="npc">NPC profile</button>
         <button id="toolLab" class="tab" role="tab" aria-controls="tab-lab" aria-selected="false" data-tab="lab">Query Lab</button>
         <button id="toolScale" class="tab" role="tab" aria-controls="tab-scale" aria-selected="false" data-tab="scale">Scalability</button>
+        <button id="toolCompare" class="tab" role="tab" aria-controls="tab-compare" aria-selected="false" data-tab="compare">Compare runs</button>
         <button id="toolAlerts" class="tab" role="tab" aria-controls="tab-alerts" aria-selected="false" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
         <button id="toolConcepts" class="tab" role="tab" aria-controls="tab-concepts" aria-selected="false" data-tab="concepts">Concepts</button>
       </nav>
@@ -246,6 +255,34 @@
         </div>
       </div>
 
+      <div id="tab-compare" class="tabpane" role="tabpanel" aria-labelledby="toolCompare">
+        <section class="query-card compare-controls">
+          <div>
+            <h3>Compare saved runs</h3>
+            <p class="note">Choose two runs and the same tick to see whether a seed reproduces the same crowd positions and activities.</p>
+          </div>
+          <label class="field">Run A <select id="compareRunA"></select></label>
+          <label class="field">Run B <select id="compareRunB"></select></label>
+          <label class="field">Tick <input id="compareTick" type="number" min="1" value="1"></label>
+          <button id="btnCompareRuns" class="primary" type="button">Compare tick</button>
+          <button id="btnRefreshRuns" type="button">Refresh saved runs</button>
+          <span id="compareStatus" class="sub" aria-live="polite"></span>
+        </section>
+        <div class="compare-summary" id="compareSummary" aria-live="polite"></div>
+        <div class="compare-grid">
+          <section class="query-card compare-card">
+            <h3 id="compareHeadingA">Run A</h3>
+            <p id="compareMetaA" class="sub"></p>
+            <canvas id="compareMapA" class="compare-map" aria-label="Run A NPC positions at the selected tick"></canvas>
+          </section>
+          <section class="query-card compare-card">
+            <h3 id="compareHeadingB">Run B</h3>
+            <p id="compareMetaB" class="sub"></p>
+            <canvas id="compareMapB" class="compare-map" aria-label="Run B NPC positions at the selected tick"></canvas>
+          </section>
+        </div>
+      </div>
+
       <div id="tab-alerts" class="tabpane" role="tabpanel" aria-labelledby="toolAlerts">
         <p class="note">The detector reads stored history and flags any character that covered more ground in one tick than the fastest legitimate movement allows.</p>
         <button id="btnScan">Scan history</button>
@@ -276,7 +313,8 @@
       "who has ever walked past this spot."</p>
       <p>Click any character to see what it remembers. Use Query Lab to ask
       both databases the same question and compare their answers. Open the
-      Concepts tab any time for plain explanations of the ideas involved.</p>
+      Concepts tab any time for plain explanations of the ideas involved.
+      Enter a run seed to repeat a simulation, then compare saved runs side by side.</p>
       <button id="btnCloseOnboard" class="primary">Got it, let me explore</button>
     </div>
   </div>

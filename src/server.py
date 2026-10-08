@@ -29,6 +29,7 @@ def check_npc(npc_id):
 def meta():
     return {
         "run_id": engine.run_id,
+        "seed": engine.seed,
         "world": {"w": WORLD_W, "h": WORLD_H, "meters_per_unit": METERS_PER_UNIT},
         "zones": ZONES,
         "houses": CITY_HOUSES,
@@ -61,6 +62,7 @@ def stats():
     data = queries.stats()
     data.update({
         "run_id": engine.run_id,
+        "seed": engine.seed,
         "running": engine.running,
         "tick": engine.tick,
         "max_ticks": MAX_TICKS,
@@ -81,15 +83,30 @@ def sim_pause():
 
 
 @app.post("/api/sim/reset")
-def sim_reset():
-    engine.reset()
-    return {"running": engine.running, "tick": engine.tick}
+def sim_reset(seed: str | None = Query(None, max_length=64)):
+    engine.reset(seed)
+    return {"running": engine.running, "tick": engine.tick, "run_id": engine.run_id, "seed": engine.seed}
+
+
+@app.post("/api/sim/new_run")
+def sim_new_run(seed: str | None = Query(None, max_length=64)):
+    engine.new_run(seed)
+    return {
+        "running": engine.running, "tick": engine.tick, "run_id": engine.run_id,
+        "seed": engine.seed, "npc_count": engine.npc_count,
+    }
 
 
 @app.post("/api/sim/configure")
-def sim_configure(npcs: int = Query(..., ge=DEFAULT_NPC_COUNT, le=MAX_NPCS)):
-    engine.configure_npcs(npcs)
-    return {"running": engine.running, "tick": engine.tick, "npc_count": engine.npc_count}
+def sim_configure(
+    npcs: int = Query(..., ge=DEFAULT_NPC_COUNT, le=MAX_NPCS),
+    seed: str | None = Query(None, max_length=64),
+):
+    engine.configure_npcs(npcs, seed)
+    return {
+        "running": engine.running, "tick": engine.tick, "npc_count": engine.npc_count,
+        "run_id": engine.run_id, "seed": engine.seed,
+    }
 
 
 @app.post("/api/sim/fast_forward")
@@ -104,8 +121,16 @@ def live():
 
 
 @app.get("/api/frames")
-def frames(start: int = Query(1, ge=1), end: int = Query(MAX_TICKS, ge=1)):
-    return queries.frames(start, end, engine.run_id)
+def frames(
+    start: int = Query(1, ge=1), end: int = Query(MAX_TICKS, ge=1),
+    run_id: str | None = None,
+):
+    return queries.frames(start, end, run_id or engine.run_id)
+
+
+@app.get("/api/runs")
+def runs():
+    return {"runs": queries.run_catalog(engine.run_id, engine.seed, engine.npc_count, engine.tick)}
 
 
 @app.get("/api/npc/{npc_id}")
@@ -139,6 +164,7 @@ def scalability():
     distribution = queries.shard_distribution(engine.run_id)
     return {
         "run_id": engine.run_id,
+        "seed": engine.seed,
         "npc_count": engine.npc_count,
         "tick": engine.tick,
         "records_by_shard": distribution,

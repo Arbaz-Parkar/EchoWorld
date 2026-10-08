@@ -20,6 +20,9 @@ const state = {
   anomalies: [],
   stats: null,
   performance: { snapshot: null, querySamples: [], indexComparison: null, loading: false },
+  runCatalog: [],
+  comparison: null,
+  comparisonTickTouched: false,
   showTrails: true,
   mapFilter: "all",
   camera: { zoom: 1, panX: 0, panY: 0, drag: null, suppressClick: false },
@@ -201,6 +204,7 @@ async function init() {
   updateRadiusLabel();
   await pollStats();
   await pollLive();
+  await refreshRunCatalog();
   setInterval(pollLive, 250);
   setInterval(pollStats, 1000);
   setInterval(refreshProfileLive, 3000);
@@ -271,6 +275,7 @@ function buildMapNavigation() {
   }
 
   const filters = $("districtFilters");
+  filters.querySelectorAll(".filter-chip").forEach((button) => button.remove());
   const all = document.createElement("button");
   all.type = "button";
   all.className = "filter-chip active";
@@ -294,7 +299,7 @@ function buildMapNavigation() {
 }
 
 function wireEvents() {
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => { resize(); redrawComparison(); });
   canvas.addEventListener("click", onCanvasClick);
   canvas.addEventListener("wheel", onMapWheel, { passive: false });
   canvas.addEventListener("pointerdown", startMapPan);
@@ -318,8 +323,26 @@ function wireEvents() {
   $("btnStart").onclick = () => simCall("/api/sim/start");
   $("btnPause").onclick = () => simCall("/api/sim/pause");
   $("btnReset").onclick = async () => {
-    await simCall("/api/sim/reset");
+    const seed = $("runSeed").value.trim();
+    const query = seed ? "?seed=" + encodeURIComponent(seed) : "";
+    await api("/api/sim/reset" + query, { method: "POST" });
+    state.meta = await api("/api/meta");
     clearAll();
+    buildNpcSelect();
+    buildMapNavigation();
+    await setMode("live");
+    updateRunSeedStatus();
+    await pollStats();
+    await pollLive();
+    await refreshRunCatalog();
+  };
+  $("btnNewRun").onclick = startNewRun;
+  $("runSeed").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") startNewRun();
+  });
+  $("btnCopySeed").onclick = () => {
+    $("runSeed").value = state.meta.seed || "";
+    $("runSeed").focus();
   };
   $("btnFF").onclick = async () => {
     $("btnFF").disabled = true;
@@ -330,9 +353,18 @@ function wireEvents() {
     scanAlerts();
     if (state.selected) await refreshProfile();
     if ($("tab-scale").classList.contains("active")) await refreshScalability();
+    if ($("tab-compare").classList.contains("active")) await refreshRunCatalog();
   };
   $("npcCount").oninput = (e) => { $("npcCountLabel").textContent = e.target.value; };
   $("btnApplyNpcCount").onclick = configureNpcCount;
+  $("btnCompareRuns").onclick = compareRuns;
+  $("btnRefreshRuns").onclick = refreshRunCatalog;
+  $("compareRunA").onchange = () => { updateCompareTickLimit(); invalidateComparison(); };
+  $("compareRunB").onchange = () => { updateCompareTickLimit(); invalidateComparison(); };
+  $("compareTick").oninput = () => {
+    state.comparisonTickTouched = true;
+    invalidateComparison();
+  };
   $("btnScaleQuery").onclick = sampleQueryLatency;
   $("btnScaleBenchmark").onclick = runBenchmark;
 
@@ -633,6 +665,7 @@ function showTab(name) {
     refreshScalability();
     drawPerformanceCharts();
   }
+  if (name === "compare") refreshRunCatalog();
 }
 
 function showHint(text) {
@@ -679,10 +712,12 @@ function clearAll() {
   state.live.trails.clear();
   state.motion.clear();
   state.npcs = [];
+  state.mapFilter = "all";
   state.selected = null;
   state.profile = null;
   state.performance.snapshot = null;
   state.performance.indexComparison = null;
+  state.comparison = null;
   state.probe = null;
   state.anomalies = [];
   state.lastScanTick = -1;
@@ -696,6 +731,10 @@ function clearAll() {
   $("benchResult").innerHTML = "";
   $("queryShown").classList.remove("show");
   renderAlerts();
+  $("compareSummary").textContent = "";
+  $("compareMetaA").textContent = "";
+  $("compareMetaB").textContent = "";
+  redrawComparison();
   updateScrub();
   updatePlayButton();
 }
@@ -757,6 +796,8 @@ async function pollStats() {
   try {
     const s = await api("/api/stats");
     state.stats = s;
+    if (state.meta && s.seed) state.meta.seed = s.seed;
+    updateRunSeedStatus();
     $("pTick").textContent = "Tick " + s.tick + " / " + s.max_ticks + (s.running ? " (running)" : "");
     $("pRedis").textContent = "Redis keys " + s.redis_keys;
     const names = Object.keys(s.mongo);
@@ -2297,27 +2338,255 @@ async function runSpatial() {
   }
 }
 
+function updateRunSeedStatus() {
+  if (!$("runSeedStatus") || !state.meta) return;
+  const seed = (state.stats && state.stats.seed) || state.meta.seed;
+  $("runSeedStatus").textContent = seed ? "Current seed: " + seed : "Current seed unavailable";
+}
+
+async function startNewRun() {
+  const button = $("btnNewRun");
+  const seed = $("runSeed").value.trim();
+  const query = new URLSearchParams();
+  if (seed) query.set("seed", seed);
+  button.disabled = true;
+  button.textContent = "Starting...";
+  try {
+    const queryText = query.toString();
+    await api("/api/sim/new_run" + (queryText ? "?" + queryText : ""), { method: "POST" });
+    state.meta = await api("/api/meta");
+    clearAll();
+    buildNpcSelect();
+    buildMapNavigation();
+    await api("/api/sim/start", { method: "POST" });
+    await setMode("live");
+    await pollStats();
+    await refreshRunCatalog();
+    if ($("tab-scale").classList.contains("active")) await refreshScalability();
+  } catch (e) {
+    $("runSeedStatus").textContent = "Could not start run: " + e.message;
+  }
+  button.disabled = false;
+  button.textContent = "New run";
+}
+
+async function refreshRunCatalog() {
+  const selectA = $("compareRunA");
+  if (!selectA || refreshRunCatalog.loading) return;
+  refreshRunCatalog.loading = true;
+  const previousA = selectA.value;
+  const previousB = $("compareRunB").value;
+  try {
+    const response = await api("/api/runs");
+    state.runCatalog = response.runs || [];
+    for (const [select, previous] of [[selectA, previousA], [$("compareRunB"), previousB]]) {
+      select.replaceChildren();
+      for (const run of state.runCatalog) {
+        const option = document.createElement("option");
+        option.value = run.run_id;
+        const seed = run.seed || "legacy/no seed";
+        const active = run.active ? " · active" : "";
+        option.textContent = seed + " · " + run.npc_count + " NPC · " + run.max_tick + " ticks" + active + " · " + run.run_id.slice(0, 8);
+        select.appendChild(option);
+      }
+      if (state.runCatalog.some((run) => run.run_id === previous)) {
+        select.value = previous;
+      } else if (select === selectA) {
+        select.value = (state.runCatalog.find((run) => run.active) || state.runCatalog[0] || {}).run_id || "";
+      } else {
+        const activeId = (state.runCatalog.find((run) => run.active) || {}).run_id;
+        select.value = (state.runCatalog.find((run) => run.run_id !== activeId) || state.runCatalog[0] || {}).run_id || "";
+      }
+    }
+    updateCompareTickLimit();
+    $("compareStatus").textContent = state.runCatalog.length + " saved run" + (state.runCatalog.length === 1 ? "" : "s") + " available.";
+  } catch (e) {
+    $("compareStatus").textContent = "Could not load saved runs: " + e.message;
+  }
+  refreshRunCatalog.loading = false;
+}
+
+function updateCompareTickLimit() {
+  const a = state.runCatalog.find((run) => run.run_id === $("compareRunA").value);
+  const b = state.runCatalog.find((run) => run.run_id === $("compareRunB").value);
+  const max = a && b ? Math.max(1, Math.min(a.max_tick, b.max_tick)) : 1;
+  const input = $("compareTick");
+  input.max = max;
+  const requested = state.comparisonTickTouched ? Number(input.value) || 1 : max;
+  input.value = Math.max(1, Math.min(requested, max));
+}
+
+function invalidateComparison() {
+  state.comparison = null;
+  $("compareSummary").textContent = "";
+  $("compareMetaA").textContent = "";
+  $("compareMetaB").textContent = "";
+  $("compareStatus").textContent = "Selection changed. Compare again to load these frames.";
+  redrawComparison();
+}
+
+async function compareRuns() {
+  const runA = state.runCatalog.find((run) => run.run_id === $("compareRunA").value);
+  const runB = state.runCatalog.find((run) => run.run_id === $("compareRunB").value);
+  const tick = Math.max(1, Number($("compareTick").value) || 1);
+  if (!runA || !runB) {
+    $("compareStatus").textContent = "Create or load a saved run before comparing.";
+    return;
+  }
+  const button = $("btnCompareRuns");
+  button.disabled = true;
+  $("compareStatus").textContent = "Loading both frames...";
+  try {
+    const loadFrame = async (run) => {
+      const q = new URLSearchParams({ start: tick, end: tick, run_id: run.run_id });
+      const result = await api("/api/frames?" + q.toString());
+      return result.frames.find((frame) => frame.tick === tick) || null;
+    };
+    const [frameA, frameB] = await Promise.all([loadFrame(runA), loadFrame(runB)]);
+    state.comparison = { runA, runB, frameA, frameB, tick };
+    $("compareHeadingA").textContent = "Run A · tick " + tick;
+    $("compareHeadingB").textContent = "Run B · tick " + tick;
+    $("compareMetaA").textContent = runDescription(runA, frameA);
+    $("compareMetaB").textContent = runDescription(runB, frameB);
+    redrawComparison();
+    $("compareSummary").textContent = compareFrameSummary(runA, runB, frameA, frameB);
+    $("compareStatus").textContent = frameA && frameB ? "Comparison complete." : "One or both runs have no recorded frame at that tick.";
+  } catch (e) {
+    $("compareStatus").textContent = "Comparison failed: " + e.message;
+  }
+  button.disabled = false;
+}
+
+function runDescription(run, frame) {
+  return "Seed " + (run.seed || "unknown/legacy") + " · " + run.npc_count + " NPC · " +
+    run.max_tick + " recorded ticks · " + (frame ? frame.npcs.length : 0) + " NPCs in selected frame";
+}
+
+function compareFrameSummary(runA, runB, frameA, frameB) {
+  if (!frameA || !frameB) return "A saved frame is missing for the selected tick. Choose a tick recorded in both runs.";
+  const mapA = new Map(frameA.npcs.map((npc) => [npc.id, npc]));
+  const mapB = new Map(frameB.npcs.map((npc) => [npc.id, npc]));
+  const shared = [...mapA.keys()].filter((id) => mapB.has(id));
+  let distanceTotal = 0;
+  let exactPositions = 0;
+  let matchingActivities = 0;
+  let matchingStates = 0;
+  for (const id of shared) {
+    const a = mapA.get(id), b = mapB.get(id);
+    const distance = Math.hypot(a.x - b.x, a.y - b.y);
+    distanceTotal += distance;
+    if (distance < 0.005) exactPositions++;
+    if (a.activity === b.activity) matchingActivities++;
+    if (distance < 0.005 && a.activity === b.activity && a.zone === b.zone &&
+        a.target === b.target && a.routine === b.routine) matchingStates++;
+  }
+  const sameSeed = !!runA.seed && runA.seed === runB.seed;
+  const sameCount = runA.npc_count === runB.npc_count;
+  const sameRoster = shared.length === mapA.size && shared.length === mapB.size;
+  const identical = sameRoster && matchingStates === shared.length;
+  const condition = sameSeed
+    ? (sameCount ? "Same seed and NPC count." : "Same seed, different NPC counts.")
+    : "Seeds differ or are unavailable.";
+  return condition +
+    " Shared NPCs: " + shared.length + ". Exact position matches: " + exactPositions +
+    ". Activity matches: " + matchingActivities + ". Full NPC state matches: " + matchingStates +
+    ". Average position difference: " +
+    (shared.length ? (distanceTotal / shared.length).toFixed(3) : "—") + " world units. " +
+    (identical ? "These frames match exactly." : "These frames differ.");
+}
+
+function redrawComparison() {
+  if (!state.comparison) {
+    for (const id of ["compareMapA", "compareMapB"]) {
+      const target = $(id);
+      if (!target) continue;
+      const context = target.getContext("2d");
+      context.clearRect(0, 0, target.width, target.height);
+    }
+    return;
+  }
+  renderComparisonMap("compareMapA", state.comparison.frameA);
+  renderComparisonMap("compareMapB", state.comparison.frameB);
+}
+
+function renderComparisonMap(id, frame) {
+  const target = $(id);
+  const width = target.clientWidth || 600;
+  const height = target.clientHeight || 280;
+  const ratio = window.devicePixelRatio || 1;
+  target.width = Math.round(width * ratio);
+  target.height = Math.round(height * ratio);
+  const context = target.getContext("2d");
+  context.setTransform(target.width / state.meta.world.w, 0, 0, target.height / state.meta.world.h, 0, 0);
+  context.fillStyle = "#1a2a23";
+  context.fillRect(0, 0, state.meta.world.w, state.meta.world.h);
+  context.fillStyle = "rgba(10, 18, 15, 0.42)";
+  for (let x = 4; x < 100; x += 8) {
+    for (let y = 5; y < 80; y += 8) {
+      context.beginPath(); context.arc(x + ((y / 8) % 2) * 2, y, 0.18, 0, Math.PI * 2); context.fill();
+    }
+  }
+  context.fillStyle = "#45483b";
+  context.beginPath(); context.ellipse(50, 40, 45, 34, 0, 0, Math.PI * 2); context.fill();
+  context.strokeStyle = "#a58c65"; context.lineWidth = 0.8;
+  context.beginPath(); context.ellipse(50, 40, 44.3, 33.3, 0, 0, Math.PI * 2); context.stroke();
+  context.fillStyle = "#68563f";
+  context.beginPath(); context.ellipse(50, 40, 21.5, 15.5, 0, 0, Math.PI * 2); context.fill();
+  context.strokeStyle = "rgba(215, 193, 145, 0.6)"; context.lineWidth = 0.55;
+  context.beginPath(); context.ellipse(50, 40, 22, 16, 0, 0, Math.PI * 2); context.stroke();
+  for (const zone of state.meta.zones) {
+    context.fillStyle = (state.meta.activities[zone.activity] || "#d6bd83") + "35";
+    context.strokeStyle = "rgba(235, 218, 179, 0.55)";
+    context.lineWidth = 0.28;
+    context.beginPath(); context.arc(zone.x, zone.y, zone.r * 0.78, 0, Math.PI * 2); context.fill(); context.stroke();
+    context.fillStyle = "#f0e3c5";
+    context.font = "1.15px system-ui";
+    context.textAlign = "center";
+    context.fillText(zone.name, zone.x, zone.y + zone.r + 1.8);
+  }
+  if (!frame) {
+    context.fillStyle = "rgba(6, 10, 12, 0.68)";
+    context.fillRect(0, 0, state.meta.world.w, state.meta.world.h);
+    context.fillStyle = "#eaf0f6";
+    context.font = "2px system-ui";
+    context.textAlign = "center";
+    context.fillText("No frame recorded", state.meta.world.w / 2, state.meta.world.h / 2);
+    return;
+  }
+  for (const npc of frame.npcs) {
+    context.fillStyle = actColor(npc.activity);
+    context.strokeStyle = "rgba(10, 14, 17, 0.9)";
+    context.lineWidth = 0.28;
+    context.beginPath(); context.arc(npc.x, npc.y, 0.72, 0, Math.PI * 2); context.fill(); context.stroke();
+  }
+}
+
 async function configureNpcCount() {
   const btn = $("btnApplyNpcCount");
   const count = Number($("npcCount").value);
+  const seed = $("runSeed").value.trim();
+  const query = new URLSearchParams({ npcs: count });
+  if (seed) query.set("seed", seed);
   btn.disabled = true;
   $("scaleConfigStatus").textContent = "Starting a fresh run...";
   try {
-    await api("/api/sim/configure?npcs=" + count, { method: "POST" });
+    await api("/api/sim/configure?" + query.toString(), { method: "POST" });
     state.meta = await api("/api/meta");
     await api("/api/sim/start", { method: "POST" });
     state.selected = null;
     state.performance.indexComparison = null;
     clearAll();
     buildNpcSelect();
+    buildMapNavigation();
     $("npcCount").value = state.meta.npc_count;
     $("npcCountLabel").textContent = state.meta.npc_count;
     $("qTo").value = state.meta.max_ticks;
     await setMode("live");
     await pollStats();
     await refreshScalability();
+    await refreshRunCatalog();
     $("scaleConfigStatus").textContent =
-      "New run started with " + state.meta.npc_count + " NPCs. Earlier history is preserved.";
+      "New run started with " + state.meta.npc_count + " NPCs and seed " + state.meta.seed + ". Earlier history is preserved.";
   } catch (e) {
     $("scaleConfigStatus").textContent = "Could not configure the run: " + e.message;
   }

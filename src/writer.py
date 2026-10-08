@@ -11,7 +11,7 @@ _write_samples = defaultdict(lambda: deque(maxlen=WRITE_SAMPLE_LIMIT))
 _write_samples_lock = threading.Lock()
 
 
-def write_frame(tick, npcs, run_id):
+def write_frame(tick, npcs, run_id, seed=None):
     started = time.perf_counter()
     now = datetime.now(timezone.utc)
     pipe = redis_client.pipeline()
@@ -28,7 +28,8 @@ def write_frame(tick, npcs, run_id):
         pipe.geoadd(GEO_KEY, (lon, lat, n["id"]))
 
         batches[shard_index(n["id"])].append({
-            "run_id": run_id, "npc_id": n["id"], "tick": tick, "timestamp": now,
+            "run_id": run_id, "seed": seed, "npc_count": len(npcs),
+            "npc_id": n["id"], "tick": tick, "timestamp": now,
             "x": n["x"], "y": n["y"],
             "location": {"type": "Point", "coordinates": [lon, lat]},
             "activity": n["activity"], "zone": n["zone"] or "",

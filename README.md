@@ -18,6 +18,7 @@ Each run starts with randomized NPC positions and behavior. The browser interfac
 - **Behavioral memory:** MongoDB history records district visits and recent flee incidents. NPCs are more likely to return to familiar districts and temporarily avoid the district where they were startled; their profile explains the latest choice.
 - **Schedules and day/night:** Market workers, tavern staff, soldiers, and watch guards have different shift and sleep hours. NPCs travel to their workplace or home as their routine changes, while the accelerated world clock changes map lighting in live and replay views.
 - **Scalability lab:** Increase the crowd from 12 to 120 NPCs and chart live-versus-history query latency, dual-write throughput, current-run shard distribution, and indexed-versus-scan performance.
+- **Reproducible runs:** Runs receive a fresh random seed by default. Enter a seed to repeat the same simulation with the same NPC count, and compare any two saved runs at the same tick.
 - **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
 
 ## How it fits together
@@ -85,13 +86,16 @@ To stop the database containers, run `docker compose down`. Docker's named volum
 4. Watch NPCs head to their shifts, take free time, and return home for sleep. Select an NPC to inspect its work hours, sleep hours, and historical activity.
 5. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
 6. Open **Scalability** to change the NPC count and inspect latency, write rate, shard balance, and the index benchmark.
-7. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
+7. Enter a seed in **Optional run seed** and choose **New run**. To reproduce it, run again with the same seed and NPC count; **Use current** copies the current seed into the input.
+8. Open **Compare runs** to select two saved runs, view the same tick side by side, and see how many NPC positions and activities match.
+9. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
 
-The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run. At ten in-game minutes per tick, a run can cover nearly three in-game days.
+The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. By default each new run gets a fresh random seed. Supplying the same seed and NPC count reproduces the same positions, dwell times, destinations, and movement events for the same simulation version. At ten in-game minutes per tick, a run can cover nearly three in-game days.
 
 ## Data and reset behavior
 
-- Starting a new server process creates a new run ID and randomized NPC state. Previous MongoDB records remain stored, but run-specific views only show the active run.
+- Starting a new server process creates a new run ID and a fresh random seed. Previous MongoDB records remain stored and appear in the run comparison list.
+- **New run** and NPC-count changes keep previous MongoDB history. Leave the seed blank for a random run or enter a seed to reproduce it. Exact reproduction requires the same NPC count and simulation version.
 - Changing the NPC count starts a new run and keeps previous MongoDB history. The Scalability tab counts records and writes for the active run; the index benchmark also reports the total shard collection size its forced scan traverses.
 - The database status counters show collection totals, so they can include history from earlier runs.
 - The app's **Reset** control clears history from both MongoDB collections and clears the app's Redis state, then initializes a fresh run.
@@ -105,10 +109,12 @@ The full interactive schema is available at `/docs`. The main routes are:
 | --- | --- | --- |
 | `GET` | `/api/meta` | World, NPC schedules, game clock, zones, and simulation metadata |
 | `GET` | `/api/stats` | Database counts and current simulation status |
-| `POST` | `/api/sim/configure?npcs=48` | Reinitialize the world at a chosen NPC count (12-120), preserving history |
+| `GET` | `/api/runs` | Saved run IDs, seeds, NPC counts, and recorded tick ranges |
+| `POST` | `/api/sim/new_run?seed=market-day` | Start a seeded or random run, preserving prior history |
+| `POST` | `/api/sim/configure?npcs=48&seed=market-day` | Reinitialize at a chosen NPC count (12-120), preserving history |
 | `GET` | `/api/scalability` | Active-run shard distribution and write throughput samples |
 | `GET` | `/api/live` | Current NPC snapshot from Redis |
-| `GET` | `/api/frames?start=1&end=400` | Recorded frames for the active run |
+| `GET` | `/api/frames?start=1&end=400` | Recorded frames for the active run; add `run_id=...` to load another saved run |
 | `GET` | `/api/npc/{npc_id}` | NPC profile and history summary |
 | `GET` | `/api/memory?npc=NPC_01&t_from=1&t_to=100` | One NPC's history over a tick range |
 | `GET` | `/api/nearby?x=50&y=40&radius=10&t_from=1&t_to=400` | Live and historical nearby-position query |
@@ -116,7 +122,7 @@ The full interactive schema is available at `/docs`. The main routes are:
 | `GET` | `/api/anomalies` | Detect implausible movement in the active run |
 | `POST` | `/api/sim/start` | Start real-time simulation |
 | `POST` | `/api/sim/pause` | Pause real-time simulation |
-| `POST` | `/api/sim/reset` | Clear stored app data and initialize a new run |
+| `POST` | `/api/sim/reset?seed=market-day` | Clear stored app data and initialize a seeded or random run |
 | `POST` | `/api/sim/fast_forward?ticks=300` | Advance the simulation without real-time delays |
 
 Coordinates `x` and `y` are expressed in world units. MongoDB records also store a GeoJSON point projected from the small world map so that geospatial operations use distances in meters.

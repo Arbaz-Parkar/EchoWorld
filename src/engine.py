@@ -1,6 +1,7 @@
 import heapq
 import math
 import random
+import secrets
 import threading
 import time
 import uuid
@@ -258,23 +259,25 @@ def _find_path(start, goal):
 
 
 class Engine:
-    def __init__(self, npc_count=DEFAULT_NPC_COUNT):
+    def __init__(self, npc_count=DEFAULT_NPC_COUNT, seed=None):
         self.lock = threading.Lock()
         self.operation_lock = threading.Lock()
         self.running = False
         self.thread = None
         self.tick = 0
         self.set_npc_count(npc_count)
-        self._init_state()
+        self._init_state(seed)
 
     def set_npc_count(self, npc_count):
         self.npc_count = npc_count
         self.npc_ids, self.npc_names, self.npc_roles = make_npc_roster(npc_count)
 
-    def _init_state(self):
+    def _init_state(self, seed=None):
         # Keep equal tick numbers from separate process runs in separate histories.
         self.run_id = uuid.uuid4().hex
-        self.rng = random.Random()
+        seed_text = str(seed).strip() if seed is not None else ""
+        self.seed = seed_text or secrets.token_hex(8)
+        self.rng = random.Random(self.seed)
         self.tick = 0
         self.npcs = []
         for index, npc_id in enumerate(self.npc_ids):
@@ -552,7 +555,7 @@ class Engine:
                  "incident_tick": n["incident_tick"]}
                 for n in self.npcs
             ]
-            write_frame(self.tick, frame, self.run_id)
+            write_frame(self.tick, frame, self.run_id, self.seed)
 
     def _loop(self):
         while self.running and self.tick < MAX_TICKS:
@@ -574,14 +577,21 @@ class Engine:
         if self.thread:
             self.thread.join(timeout=2)
 
-    def reset(self):
+    def reset(self, seed=None):
         with self.operation_lock:
             self.pause()
             with self.lock:
                 reset_all()
-                self._init_state()
+                self._init_state(seed)
 
-    def configure_npcs(self, npc_count):
+    def new_run(self, seed=None):
+        with self.operation_lock:
+            self.pause()
+            with self.lock:
+                clear_live_state()
+                self._init_state(seed)
+
+    def configure_npcs(self, npc_count, seed=None):
         if npc_count < DEFAULT_NPC_COUNT or npc_count > MAX_NPCS:
             raise ValueError(f"NPC count must be between {DEFAULT_NPC_COUNT} and {MAX_NPCS}")
         with self.operation_lock:
@@ -589,7 +599,7 @@ class Engine:
             with self.lock:
                 self.set_npc_count(npc_count)
                 clear_live_state()
-                self._init_state()
+                self._init_state(seed)
 
     def fast_forward(self, ticks):
         with self.operation_lock:
