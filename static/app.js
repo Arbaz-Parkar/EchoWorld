@@ -19,6 +19,7 @@ const state = {
   probeMode: false,
   anomalies: [],
   stats: null,
+  performance: { snapshot: null, querySamples: [], indexComparison: null, loading: false },
   showTrails: true,
   lastTs: 0,
   lastPanel: 0,
@@ -182,12 +183,18 @@ async function init() {
   resize();
   $("qTo").value = state.meta.max_ticks;
   $("mTo").value = 100;
+  $("npcCount").max = state.meta.max_npcs;
+  $("npcCount").value = state.meta.npc_count;
+  $("npcCountLabel").textContent = state.meta.npc_count;
   updateRadiusLabel();
   await pollStats();
   await pollLive();
   setInterval(pollLive, 250);
   setInterval(pollStats, 1000);
   setInterval(refreshProfileLive, 3000);
+  setInterval(() => {
+    if ($("tab-scale").classList.contains("active")) refreshScalability();
+  }, 2500);
   requestAnimationFrame(frame);
 }
 
@@ -256,12 +263,19 @@ function wireEvents() {
     clearAll();
   };
   $("btnFF").onclick = async () => {
+    $("btnFF").disabled = true;
     $("btnFF").textContent = "Generating...";
     await simCall("/api/sim/fast_forward?ticks=300");
+    $("btnFF").disabled = false;
     $("btnFF").textContent = "Generate 300 ticks";
     scanAlerts();
     if (state.selected) await refreshProfile();
+    if ($("tab-scale").classList.contains("active")) await refreshScalability();
   };
+  $("npcCount").oninput = (e) => { $("npcCountLabel").textContent = e.target.value; };
+  $("btnApplyNpcCount").onclick = configureNpcCount;
+  $("btnScaleQuery").onclick = sampleQueryLatency;
+  $("btnScaleBenchmark").onclick = runBenchmark;
 
   $("btnPlay").onclick = () => {
     if (state.mode !== "replay") return;
@@ -325,6 +339,10 @@ function showTab(name) {
   });
   document.querySelectorAll(".tabpane").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "npc") drawTimeline();
+  if (name === "scale") {
+    refreshScalability();
+    drawPerformanceCharts();
+  }
 }
 
 function showHint(text) {
@@ -371,7 +389,10 @@ function clearAll() {
   state.live.trails.clear();
   state.motion.clear();
   state.npcs = [];
+  state.selected = null;
   state.profile = null;
+  state.performance.snapshot = null;
+  state.performance.indexComparison = null;
   state.probe = null;
   state.anomalies = [];
   state.lastScanTick = -1;
@@ -439,7 +460,7 @@ function applyLive(d) {
     }
     L.trails.set(n.id, tr);
   }
-  $("pSource").textContent = "Source: Redis, " + d.ms.toFixed(2) + " ms (all 12 NPCs, one round trip)";
+  $("pSource").textContent = "Source: Redis, " + d.ms.toFixed(2) + " ms (all " + state.meta.npcs.length + " NPCs, one round trip)";
 }
 
 async function pollStats() {
@@ -1841,17 +1862,16 @@ function showQuery(text) {
 }
 
 async function runBenchmark() {
-  if (!state.probe) {
-    $("benchResult").innerHTML = '<div class="result">Place a probe on the map first.</div>';
-    return;
-  }
-  const btn = $("btnBenchmark");
-  btn.textContent = "Running...";
+  const btns = [$("btnBenchmark"), $("btnScaleBenchmark")];
+  btns.forEach((btn) => { btn.disabled = true; btn.textContent = "Running..."; });
+  const probe = state.probe || { x: 50, y: 40, r: 20 };
   const q = new URLSearchParams({
-    x: state.probe.x.toFixed(2), y: state.probe.y.toFixed(2), radius: state.probe.r,
+    x: probe.x.toFixed(2), y: probe.y.toFixed(2), radius: probe.r,
   });
   try {
     const r = await api("/api/index_benchmark?" + q.toString());
+    state.performance.indexComparison = r;
+    drawIndexChart();
     const max = Math.max(r.indexed_ms, r.scan_ms, 0.01);
     $("benchResult").innerHTML =
       '<div class="result"><h4>Same query, same data, only the access path changes</h4>' +
@@ -1864,11 +1884,13 @@ async function runBenchmark() {
       '<span class="num">' + r.scan_ms + ' ms</span></div>' +
       '</div>' +
       '<div class="meta">Indexed plan: ' + r.indexed_plan + " | Full scan plan: " + r.scan_plan +
-      " | " + r.documents_scanned + " documents in this shard, fastest of " + r.reps + " runs each.</div></div>";
+      " | " + r.run_documents + " active-run records in this shard; scan examined a collection of " +
+      r.collection_documents + " total records. Fastest of " + r.reps + " runs each.</div></div>";
   } catch (e) {
     $("benchResult").innerHTML = '<div class="result">Benchmark failed: ' + e.message + "</div>";
+    $("scaleIndexSummary").textContent = "Benchmark failed: " + e.message;
   }
-  btn.textContent = "Compare: with index vs without";
+  btns.forEach((btn) => { btn.disabled = false; btn.textContent = btn.id === "btnScaleBenchmark" ? "Run index benchmark" : "Compare: with index vs without"; });
 }
 
 async function runSpatial() {
@@ -1891,12 +1913,258 @@ async function runSpatial() {
   );
   try {
     const r = await api("/api/nearby?" + q.toString());
+    rememberQuerySample(r);
     state.probe.points = r.history.points;
     state.probe.liveIds = new Set(r.live.map((x) => x.id));
     renderSpatial(r);
   } catch (e) {
     $("labResult").innerHTML = '<div class="result">Query failed: ' + e.message + "</div>";
   }
+}
+
+async function configureNpcCount() {
+  const btn = $("btnApplyNpcCount");
+  const count = Number($("npcCount").value);
+  btn.disabled = true;
+  $("scaleConfigStatus").textContent = "Starting a fresh run...";
+  try {
+    await api("/api/sim/configure?npcs=" + count, { method: "POST" });
+    state.meta = await api("/api/meta");
+    await api("/api/sim/start", { method: "POST" });
+    state.selected = null;
+    state.performance.indexComparison = null;
+    clearAll();
+    buildNpcSelect();
+    $("npcCount").value = state.meta.npc_count;
+    $("npcCountLabel").textContent = state.meta.npc_count;
+    $("qTo").value = state.meta.max_ticks;
+    await setMode("live");
+    await pollStats();
+    await refreshScalability();
+    $("scaleConfigStatus").textContent =
+      "New run started with " + state.meta.npc_count + " NPCs. Earlier history is preserved.";
+  } catch (e) {
+    $("scaleConfigStatus").textContent = "Could not configure the run: " + e.message;
+  }
+  btn.disabled = false;
+}
+
+async function sampleQueryLatency() {
+  const btn = $("btnScaleQuery");
+  btn.disabled = true;
+  btn.textContent = "Sampling...";
+  const probe = state.probe || { x: 50, y: 40, r: 20 };
+  const tick = Math.max(1, state.stats ? state.stats.tick : 1);
+  const q = new URLSearchParams({
+    x: probe.x.toFixed(2), y: probe.y.toFixed(2), radius: probe.r,
+    t_from: 1, t_to: tick,
+  });
+  try {
+    const r = await api("/api/nearby?" + q.toString());
+    rememberQuerySample(r);
+    $("querySampleStatus").textContent =
+      "Sample " + state.performance.querySamples.length + " at " + state.meta.npcs.length + " NPCs.";
+  } catch (e) {
+    $("querySampleStatus").textContent = "Sample failed: " + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = "Sample query latency";
+}
+
+function rememberQuerySample(result) {
+  const samples = state.performance.querySamples;
+  samples.push({
+    npc_count: state.meta.npcs.length,
+    tick: state.stats ? state.stats.tick : 0,
+    redis_ms: result.ms_live,
+    mongo_ms: result.ms_history,
+  });
+  if (samples.length > 30) samples.shift();
+  $("querySampleStatus").textContent = "Recent samples: " + samples.slice(-5).map((sample) =>
+    sample.npc_count + " NPC (Redis " + sample.redis_ms.toFixed(2) +
+    " / Mongo " + sample.mongo_ms.toFixed(2) + " ms)"
+  ).join(" · ");
+  drawQueryChart();
+}
+
+async function refreshScalability() {
+  if (state.performance.loading) return;
+  state.performance.loading = true;
+  try {
+    const snapshot = await api("/api/scalability");
+    state.performance.snapshot = snapshot;
+    $("scaleNpcTotal").textContent = snapshot.npc_count;
+    $("scaleRecordTotal").textContent = snapshot.records_total.toLocaleString();
+    const latest = snapshot.write.latest;
+    $("scaleWriteRate").textContent = latest
+      ? latest.records_per_second.toLocaleString() + " rec/s"
+      : "-";
+    $("scaleWriteTime").textContent = latest ? latest.write_ms.toFixed(2) + " ms" : "-";
+    renderShardDistribution(snapshot.records_by_shard, snapshot.records_total);
+    drawWriteChart();
+    drawQueryChart();
+    drawIndexChart();
+  } catch (e) {
+    $("scaleConfigStatus").textContent = "Performance data unavailable: " + e.message;
+  } finally {
+    state.performance.loading = false;
+  }
+}
+
+function renderShardDistribution(counts, total) {
+  const box = $("shardDistribution");
+  box.replaceChildren();
+  const entries = Object.entries(counts || {});
+  const max = Math.max(1, ...entries.map((entry) => entry[1]));
+  const colors = ["#5ec8f0", "#f2b84b"];
+  entries.forEach(([name, count], index) => {
+    const row = document.createElement("div");
+    row.className = "bar";
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = name;
+    const track = document.createElement("span");
+    track.className = "track";
+    const fill = document.createElement("span");
+    fill.className = "fill";
+    fill.style.width = (count / max * 100) + "%";
+    fill.style.background = colors[index % colors.length];
+    track.appendChild(fill);
+    const value = document.createElement("span");
+    value.className = "num";
+    value.textContent = count.toLocaleString();
+    row.append(label, track, value);
+    box.appendChild(row);
+  });
+  const note = document.createElement("div");
+  note.className = "sub";
+  note.textContent = total
+    ? total.toLocaleString() + " current-run records across both shards."
+    : "No records yet. Start or generate the run to populate the shards.";
+  box.appendChild(note);
+}
+
+function drawPerformanceCharts() {
+  drawWriteChart();
+  drawQueryChart();
+  drawIndexChart();
+}
+
+function chartCanvas(id, height) {
+  const canvasEl = $(id);
+  if (!canvasEl || !canvasEl.clientWidth) return null;
+  const ratio = window.devicePixelRatio || 1;
+  canvasEl.width = Math.round(canvasEl.clientWidth * ratio);
+  canvasEl.height = Math.round(height * ratio);
+  const context = canvasEl.getContext("2d");
+  context.scale(ratio, ratio);
+  context.clearRect(0, 0, canvasEl.clientWidth, height);
+  return { canvas: canvasEl, context, width: canvasEl.clientWidth, height };
+}
+
+function drawLineChart(id, series, unit, emptyText, height = 170) {
+  const chart = chartCanvas(id, height);
+  if (!chart) return;
+  const { context: g, width, height: h } = chart;
+  const allValues = series.flatMap((s) => s.values.map((p) => p.value)).filter(Number.isFinite);
+  g.font = "11px system-ui, sans-serif";
+  g.fillStyle = "#90a2b3";
+  if (!allValues.length) {
+    g.fillText(emptyText, 12, Math.round(h / 2));
+    return;
+  }
+  const left = 48, right = 12, top = 20, bottom = 24;
+  const plotW = Math.max(1, width - left - right);
+  const plotH = Math.max(1, h - top - bottom);
+  const maxValue = Math.max(1, ...allValues) * 1.1;
+  for (let i = 0; i <= 3; i++) {
+    const y = top + plotH * i / 3;
+    g.strokeStyle = "rgba(144,162,179,0.18)";
+    g.beginPath(); g.moveTo(left, y); g.lineTo(width - right, y); g.stroke();
+    g.fillStyle = "#90a2b3";
+    g.textAlign = "right";
+    g.fillText((maxValue * (1 - i / 3)).toFixed(maxValue < 10 ? 1 : 0), left - 6, y + 4);
+  }
+  g.textAlign = "left";
+  series.forEach((s, seriesIndex) => {
+    g.fillStyle = s.color;
+    g.fillRect(left + seriesIndex * 120, 4, 9, 9);
+    g.fillStyle = "#c8d3dc";
+    g.fillText(s.label, left + 14 + seriesIndex * 120, 13);
+    if (!s.values.length) return;
+    g.strokeStyle = s.color;
+    g.lineWidth = 2;
+    g.beginPath();
+    s.values.forEach((point, index) => {
+      const x = left + (s.values.length === 1 ? plotW : index / (s.values.length - 1) * plotW);
+      const y = top + plotH - point.value / maxValue * plotH;
+      if (index === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    });
+    g.stroke();
+  });
+  g.fillStyle = "#90a2b3";
+  g.textAlign = "left";
+  g.fillText(unit, 4, 12);
+  g.fillText("older", left, h - 4);
+  g.textAlign = "right";
+  g.fillText("newer", width - right, h - 4);
+}
+
+function drawWriteChart() {
+  const samples = state.performance.snapshot && state.performance.snapshot.write
+    ? state.performance.snapshot.write.samples.slice(-70)
+    : [];
+  drawLineChart("writeChart", [{
+    label: "Dual-write",
+    color: "#6fcf97",
+    values: samples.map((sample) => ({ value: sample.records_per_second })),
+  }], "records/s", "Generate ticks to collect write samples.");
+}
+
+function drawQueryChart() {
+  const samples = state.performance.querySamples;
+  drawLineChart("queryChart", [
+    { label: "Redis live", color: "#5ec8f0", values: samples.map((s) => ({ value: s.redis_ms })) },
+    { label: "Mongo history", color: "#f2b84b", values: samples.map((s) => ({ value: s.mongo_ms })) },
+  ], "ms", "Run a query sample to collect latency.");
+}
+
+function drawIndexChart() {
+  const result = state.performance.indexComparison;
+  const chart = chartCanvas("indexChart", 120);
+  if (!chart) return;
+  const { context: g, width, height: h } = chart;
+  if (!result) {
+    g.fillStyle = "#90a2b3";
+    g.font = "12px system-ui, sans-serif";
+    g.fillText("Run the benchmark to compare both query plans.", 12, h / 2);
+    $("scaleIndexSummary").textContent = "";
+    return;
+  }
+  const rows = [
+    { label: "2dsphere index", value: result.indexed_ms, color: "#6fcf97" },
+    { label: "Collection scan", value: result.scan_ms, color: "#ef5b5b" },
+  ];
+  const max = Math.max(0.01, ...rows.map((row) => row.value));
+  rows.forEach((row, index) => {
+    const y = 25 + index * 42;
+    g.font = "11px system-ui, sans-serif";
+    g.fillStyle = "#c8d3dc";
+    g.textAlign = "left";
+    g.fillText(row.label, 2, y + 10);
+    const x = 105, barW = Math.max(1, width - x - 54);
+    g.fillStyle = "rgba(144,162,179,0.15)";
+    g.fillRect(x, y, barW, 13);
+    g.fillStyle = row.color;
+    g.fillRect(x, y, Math.max(2, row.value / max * barW), 13);
+    g.fillStyle = "#eaf0f6";
+    g.textAlign = "right";
+    g.fillText(row.value.toFixed(2) + " ms", width - 2, y + 11);
+  });
+  $("scaleIndexSummary").textContent =
+    "Plans: " + result.indexed_plan + " / " + result.scan_plan +
+    " · " + result.run_documents + " active-run records on " + result.shard + "; collection has " +
+    result.collection_documents.toLocaleString() + " records.";
 }
 
 function renderSpatial(r) {

@@ -101,6 +101,7 @@
       <nav class="tabs" role="tablist" aria-label="Field tools">
         <button id="toolNpc" class="tab active" role="tab" aria-controls="tab-npc" aria-selected="true" data-tab="npc">NPC profile</button>
         <button id="toolLab" class="tab" role="tab" aria-controls="tab-lab" aria-selected="false" data-tab="lab">Query Lab</button>
+        <button id="toolScale" class="tab" role="tab" aria-controls="tab-scale" aria-selected="false" data-tab="scale">Scalability</button>
         <button id="toolAlerts" class="tab" role="tab" aria-controls="tab-alerts" aria-selected="false" data-tab="alerts">Alerts <span id="alertCount" class="badge">0</span></button>
         <button id="toolConcepts" class="tab" role="tab" aria-controls="tab-concepts" aria-selected="false" data-tab="concepts">Concepts</button>
       </nav>
@@ -164,6 +165,53 @@
         </div>
       </div>
 
+      <div id="tab-scale" class="tabpane" role="tabpanel" aria-labelledby="toolScale">
+        <section class="query-card scale-controls">
+          <div>
+            <h3>NPC load</h3>
+            <p class="note">Change the crowd size to start a fresh run. Earlier MongoDB run history is kept, and dashboard counts are scoped to the active run.</p>
+          </div>
+          <label class="field scale-count">NPCs <output id="npcCountLabel">12</output>
+            <input type="range" id="npcCount" min="12" max="120" step="12" value="12">
+          </label>
+          <button id="btnApplyNpcCount" class="primary">Apply count and start a new run</button>
+          <span id="scaleConfigStatus" class="sub" aria-live="polite"></span>
+        </section>
+
+        <div class="scale-metrics" aria-live="polite">
+          <div class="metric-card"><span>Active NPCs</span><strong id="scaleNpcTotal">12</strong></div>
+          <div class="metric-card"><span>Current run records</span><strong id="scaleRecordTotal">0</strong></div>
+          <div class="metric-card"><span>Latest dual-write rate</span><strong id="scaleWriteRate">—</strong></div>
+          <div class="metric-card"><span>Latest write time</span><strong id="scaleWriteTime">—</strong></div>
+        </div>
+
+        <div class="scale-grid">
+          <section class="query-card chart-card">
+            <h3>Write throughput</h3>
+            <p class="note">NPC history records written per second by each simulation tick.</p>
+            <canvas id="writeChart" class="perf-chart" height="170" aria-label="Write throughput by tick"></canvas>
+          </section>
+          <section class="query-card chart-card">
+            <h3>Query latency</h3>
+            <p class="note">Sample Redis live lookups and MongoDB historical spatial queries.</p>
+            <div class="row"><button id="btnScaleQuery">Sample query latency</button><span id="querySampleStatus" class="sub"></span></div>
+            <canvas id="queryChart" class="perf-chart" height="170" aria-label="Query latency samples"></canvas>
+          </section>
+          <section class="query-card chart-card">
+            <h3>Shard distribution</h3>
+            <p class="note">MongoDB history records written to each shard in the active run.</p>
+            <div id="shardDistribution"></div>
+          </section>
+          <section class="query-card chart-card">
+            <h3>Indexed versus scan</h3>
+            <p class="note">Run the same current-run spatial query through the 2dsphere index and a forced collection scan.</p>
+            <button id="btnScaleBenchmark">Run index benchmark</button>
+            <canvas id="indexChart" class="perf-chart compact" height="120" aria-label="Indexed query versus collection scan latency"></canvas>
+            <div id="scaleIndexSummary" class="sub"></div>
+          </section>
+        </div>
+      </div>
+
       <div id="tab-alerts" class="tabpane" role="tabpanel" aria-labelledby="toolAlerts">
         <p class="note">The detector reads stored history and flags any character that covered more ground in one tick than the fastest legitimate movement allows.</p>
         <button id="btnScan">Scan history</button>
@@ -179,7 +227,7 @@
   <div id="onboard" class="modal-backdrop" hidden>
     <div class="modal">
       <h2>What am I looking at?</h2>
-      <p>Imagine a small game world with twelve characters going about their
+      <p>Imagine a small game world with a configurable crowd of characters going about their
       day, walking between a market, a tavern, barracks, and a watchtower.
       Every time a character moves or changes what it is doing, that update
       gets written to two different databases at the same time, for two

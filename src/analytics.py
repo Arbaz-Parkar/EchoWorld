@@ -6,14 +6,14 @@ from .geo import position_from_document
 from .models import NPC_IDS, NPC_NAMES, MAX_PLAUSIBLE_STEP
 
 
-def find_anomalies(run_id):
+def find_anomalies(run_id, npc_ids=NPC_IDS, npc_names=NPC_NAMES):
     """
     Speed-limit check over stored history: any NPC that covers more ground in
     one tick than the fastest legitimate movement is flagged. This is the same
     idea anti-cheat systems use to catch speed hacks and teleports.
     """
     found = []
-    for npc_id in NPC_IDS:
+    for npc_id in npc_ids:
         projection = {
             "_id": 0, "tick": 1, "x": 1, "y": 1, "location": 1,
         }
@@ -34,7 +34,7 @@ def find_anomalies(run_id):
             if dist > MAX_PLAUSIBLE_STEP:
                 found.append({
                     "npc_id": npc_id,
-                    "name": NPC_NAMES[npc_id],
+                    "name": npc_names[npc_id],
                     "tick": tick,
                     "distance": round(dist, 1),
                     "times_typical": round(dist / typical, 1),

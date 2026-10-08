@@ -15,6 +15,7 @@ Each run starts with randomized NPC positions and behavior. The browser interfac
 - **Anomaly detection:** A movement-speed rule detects implausible jumps. NPC_03 deliberately teleports at tick 75 to demonstrate the alert.
 - **Road-aware navigation:** NPCs use A* pathfinding that favors streets, avoids building footprints, and routes through the southern gate when crossing the city wall.
 - **Behavioral memory:** MongoDB history records district visits and recent flee incidents. NPCs are more likely to return to familiar districts and temporarily avoid the district where they were startled; their profile explains the latest choice.
+- **Scalability lab:** Increase the crowd from 12 to 120 NPCs and chart live-versus-history query latency, dual-write throughput, current-run shard distribution, and indexed-versus-scan performance.
 - **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
 
 ## How it fits together
@@ -80,13 +81,15 @@ To stop the database containers, run `docker compose down`. Docker's named volum
 2. Switch to **Replay (MongoDB)** and scrub through the recorded frames.
 3. Select an NPC to inspect its current profile and historical activity.
 4. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
-5. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
+5. Open **Scalability** to change the NPC count and inspect latency, write rate, shard balance, and the index benchmark.
+6. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
 
-The city has 12 NPCs, eight destinations, and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
+The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
 
 ## Data and reset behavior
 
 - Starting a new server process creates a new run ID and randomized NPC state. Previous MongoDB records remain stored, but run-specific views only show the active run.
+- Changing the NPC count starts a new run and keeps previous MongoDB history. The Scalability tab counts records and writes for the active run; the index benchmark also reports the total shard collection size its forced scan traverses.
 - The database status counters show collection totals, so they can include history from earlier runs.
 - The app's **Reset** control clears history from both MongoDB collections and clears the app's Redis state, then initializes a fresh run.
 - MongoDB and Redis use Docker named volumes. Stopping the containers with `docker compose down` preserves the data; use the app's Reset control to clear the EchoWorld data.
@@ -99,6 +102,8 @@ The full interactive schema is available at `/docs`. The main routes are:
 | --- | --- | --- |
 | `GET` | `/api/meta` | World, NPC, zone, and simulation metadata |
 | `GET` | `/api/stats` | Database counts and current simulation status |
+| `POST` | `/api/sim/configure?npcs=48` | Reinitialize the world at a chosen NPC count (12-120), preserving history |
+| `GET` | `/api/scalability` | Active-run shard distribution and write throughput samples |
 | `GET` | `/api/live` | Current NPC snapshot from Redis |
 | `GET` | `/api/frames?start=1&end=400` | Recorded frames for the active run |
 | `GET` | `/api/npc/{npc_id}` | NPC profile and history summary |

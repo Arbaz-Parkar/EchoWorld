@@ -6,12 +6,13 @@ import time
 import uuid
 
 from .models import (
-    NPC_IDS, WORLD_W, WORLD_H, ZONES, CITY_BLOCKERS, CITY_HOUSES,
+    WORLD_W, WORLD_H, ZONES, CITY_BLOCKERS, CITY_HOUSES,
     WALK_SPEED, FLEE_SPEED, DWELL_RANGE, FLEE_CHANCE, MAX_TICKS,
-    TICK_SECONDS, ANOMALY_NPC, ANOMALY_TICK, NPC_ROLES,
+    TICK_SECONDS, ANOMALY_NPC, ANOMALY_TICK,
+    DEFAULT_NPC_COUNT, MAX_NPCS, make_npc_roster,
 )
 from .writer import write_frame
-from .db import reset_all
+from .db import reset_all, clear_live_state
 from .queries import behavioral_memory
 
 ZONE_BY_NAME = {z["name"]: z for z in ZONES}
@@ -256,12 +257,18 @@ def _find_path(start, goal):
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, npc_count=DEFAULT_NPC_COUNT):
         self.lock = threading.Lock()
+        self.operation_lock = threading.Lock()
         self.running = False
         self.thread = None
         self.tick = 0
+        self.set_npc_count(npc_count)
         self._init_state()
+
+    def set_npc_count(self, npc_count):
+        self.npc_count = npc_count
+        self.npc_ids, self.npc_names, self.npc_roles = make_npc_roster(npc_count)
 
     def _init_state(self):
         # Keep equal tick numbers from separate process runs in separate histories.
@@ -269,8 +276,8 @@ class Engine:
         self.rng = random.Random()
         self.tick = 0
         self.npcs = []
-        for npc_id in NPC_IDS:
-            zone = ZONE_BY_NAME[NPC_ROLES[npc_id]]
+        for npc_id in self.npc_ids:
+            zone = ZONE_BY_NAME[self.npc_roles[npc_id]]
             x, y = self._initial_position(zone)
             self.npcs.append({
                 "id": npc_id,
@@ -482,11 +489,12 @@ class Engine:
         self.running = False
 
     def start(self):
-        if self.running or self.tick >= MAX_TICKS:
-            return
-        self.running = True
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
+        with self.operation_lock:
+            if self.running or self.tick >= MAX_TICKS:
+                return
+            self.running = True
+            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.thread.start()
 
     def pause(self):
         self.running = False
@@ -494,18 +502,30 @@ class Engine:
             self.thread.join(timeout=2)
 
     def reset(self):
-        self.pause()
-        with self.lock:
-            reset_all()
-            self._init_state()
+        with self.operation_lock:
+            self.pause()
+            with self.lock:
+                reset_all()
+                self._init_state()
+
+    def configure_npcs(self, npc_count):
+        if npc_count < DEFAULT_NPC_COUNT or npc_count > MAX_NPCS:
+            raise ValueError(f"NPC count must be between {DEFAULT_NPC_COUNT} and {MAX_NPCS}")
+        with self.operation_lock:
+            self.pause()
+            with self.lock:
+                self.set_npc_count(npc_count)
+                clear_live_state()
+                self._init_state()
 
     def fast_forward(self, ticks):
-        if self.running:
-            return
-        for _ in range(ticks):
-            if self.tick >= MAX_TICKS:
-                break
-            self._advance_one()
+        with self.operation_lock:
+            if self.running:
+                return
+            for _ in range(ticks):
+                if self.tick >= MAX_TICKS:
+                    break
+                self._advance_one()
 
 
 engine = Engine()

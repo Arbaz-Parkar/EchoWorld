@@ -8,9 +8,11 @@ from . import queries, analytics
 from .db import SHARD_LABELS, shard_index
 from .engine import engine
 from .models import (
-    NPC_IDS, NPC_NAMES, NPC_ROLES, WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
+    WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
     CITY_HOUSES, MAX_TICKS, TICK_SECONDS, METERS_PER_UNIT,
+    DEFAULT_NPC_COUNT, MAX_NPCS,
 )
+from .writer import write_performance
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -18,7 +20,7 @@ app = FastAPI(title="EchoWorld")
 
 
 def check_npc(npc_id):
-    if npc_id not in NPC_IDS:
+    if npc_id not in engine.npc_ids:
         raise HTTPException(status_code=404, detail="Unknown NPC")
 
 
@@ -30,9 +32,12 @@ def meta():
         "zones": ZONES,
         "houses": CITY_HOUSES,
         "activities": ACTIVITY_COLORS,
+        "npc_count": engine.npc_count,
+        "default_npc_count": DEFAULT_NPC_COUNT,
+        "max_npcs": MAX_NPCS,
         "npcs": [
-            {"id": i, "name": NPC_NAMES[i], "role": NPC_ROLES[i], "shard": SHARD_LABELS[shard_index(i)]}
-            for i in NPC_IDS
+            {"id": i, "name": engine.npc_names[i], "role": engine.npc_roles[i], "shard": SHARD_LABELS[shard_index(i)]}
+            for i in engine.npc_ids
         ],
         "max_ticks": MAX_TICKS,
         "tick_seconds": TICK_SECONDS,
@@ -69,6 +74,12 @@ def sim_reset():
     return {"running": engine.running, "tick": engine.tick}
 
 
+@app.post("/api/sim/configure")
+def sim_configure(npcs: int = Query(..., ge=DEFAULT_NPC_COUNT, le=MAX_NPCS)):
+    engine.configure_npcs(npcs)
+    return {"running": engine.running, "tick": engine.tick, "npc_count": engine.npc_count}
+
+
 @app.post("/api/sim/fast_forward")
 def sim_fast_forward(ticks: int = Query(300, ge=1, le=MAX_TICKS)):
     engine.fast_forward(ticks)
@@ -77,7 +88,7 @@ def sim_fast_forward(ticks: int = Query(300, ge=1, le=MAX_TICKS)):
 
 @app.get("/api/live")
 def live():
-    return queries.live_snapshot()
+    return queries.live_snapshot(engine.npc_ids)
 
 
 @app.get("/api/frames")
@@ -108,12 +119,25 @@ def nearby(
 
 @app.get("/api/index_benchmark")
 def index_benchmark(x: float, y: float, radius: float = Query(10, ge=1, le=60)):
-    return queries.index_benchmark(x, y, radius)
+    return queries.index_benchmark(x, y, radius, run_id=engine.run_id)
+
+
+@app.get("/api/scalability")
+def scalability():
+    distribution = queries.shard_distribution(engine.run_id)
+    return {
+        "run_id": engine.run_id,
+        "npc_count": engine.npc_count,
+        "tick": engine.tick,
+        "records_by_shard": distribution,
+        "records_total": sum(distribution.values()),
+        "write": write_performance(engine.run_id),
+    }
 
 
 @app.get("/api/anomalies")
 def anomalies():
-    return analytics.find_anomalies(engine.run_id)
+    return analytics.find_anomalies(engine.run_id, engine.npc_ids, engine.npc_names)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

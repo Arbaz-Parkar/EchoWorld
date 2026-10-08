@@ -32,18 +32,18 @@ def _npc_view(d):
     }
 
 
-def live_snapshot():
+def live_snapshot(npc_ids=NPC_IDS):
     """Reads every NPC's current state from Redis in one round trip."""
     start = time.perf_counter()
     pipe = redis_client.pipeline()
-    for npc_id in NPC_IDS:
+    for npc_id in npc_ids:
         pipe.hgetall(f"npc:live:{npc_id}")
     pipe.get("sim:tick")
     results = pipe.execute()
     ms = (time.perf_counter() - start) * 1000
 
     npcs = []
-    for npc_id, h in zip(NPC_IDS, results[:-1]):
+    for npc_id, h in zip(npc_ids, results[:-1]):
         if h:
             npcs.append({
                 "id": npc_id, "x": float(h["x"]), "y": float(h["y"]),
@@ -274,7 +274,7 @@ def _plan_stage(node, found=None):
     return found
 
 
-def index_benchmark(x, y, radius_units, reps=15):
+def index_benchmark(x, y, radius_units, reps=15, run_id=None):
     """
     Runs the identical spatial query twice: once letting MongoDB use the
     2dsphere index normally, once with a $natural hint that forces a full
@@ -290,6 +290,8 @@ def index_benchmark(x, y, radius_units, reps=15):
             "$geoWithin": {"$centerSphere": [[lon, lat], radius_m / 1000.0 / EARTH_RADIUS_KM]}
         }
     }
+    if run_id is not None:
+        query["run_id"] = run_id
     col = shards[0]
 
     indexed_times = []
@@ -311,11 +313,29 @@ def index_benchmark(x, y, radius_units, reps=15):
     except Exception:
         indexed_plan, scan_plan = [], []
 
+    collection_documents = col.estimated_document_count()
+    run_documents = (
+        col.count_documents({"run_id": run_id})
+        if run_id is not None else collection_documents
+    )
     return {
-        "documents_scanned": col.count_documents({}),
+        "documents_scanned": collection_documents,
+        "run_documents": run_documents,
+        "collection_documents": collection_documents,
+        "shard": SHARD_LABELS[0],
+        "run_id": run_id,
         "indexed_ms": round(min(indexed_times) * 1000, 3),
         "scan_ms": round(min(scan_times) * 1000, 3),
         "indexed_plan": indexed_plan[0] if indexed_plan else "unknown",
         "scan_plan": scan_plan[0] if scan_plan else "unknown",
         "reps": reps,
     }
+
+
+def shard_distribution(run_id):
+    """Count this run's records on each shard for the scalability view."""
+    counts = {
+        SHARD_LABELS[i]: col.count_documents({"run_id": run_id})
+        for i, col in enumerate(shards)
+    }
+    return counts

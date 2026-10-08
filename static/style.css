@@ -213,7 +213,7 @@ canvas#map { display: block; width: 100%; cursor: pointer; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px currentColor; }
 
-.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 16px 0 4px; }
+.tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 16px 0 4px; }
 .tab { min-width: 0; font-size: 13px; }
 .tab.active { background: var(--accent); color: #062033; border-color: var(--accent); font-weight: 600; }
 .badge { background: var(--danger); color: white; border-radius: 999px; padding: 0 7px; font-size: 11px; }
@@ -222,6 +222,22 @@ canvas#map { display: block; width: 100%; cursor: pointer; }
 .query-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .query-card { min-width: 0; padding: 14px; background: rgba(10,16,20,0.2); border: 1px solid var(--line); border-radius: 10px; }
 .query-card h3:first-child { margin-top: 0; }
+.scale-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px 20px; }
+.scale-controls > div { flex: 1 1 320px; }
+.scale-count { flex: 0 1 200px; }
+.scale-count output { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.scale-count input { display: block; width: 100%; margin-top: 6px; accent-color: var(--accent); }
+.scale-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.metric-card { min-width: 0; padding: 12px 14px; background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; }
+.metric-card span { display: block; color: var(--muted); font-size: 11px; }
+.metric-card strong { display: block; margin-top: 5px; font-size: 19px; font-variant-numeric: tabular-nums; }
+.scale-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.chart-card { min-height: 220px; }
+.chart-card h3 { margin-top: 0; }
+canvas.perf-chart { display: block; width: 100%; height: 170px; margin-top: 8px; background: rgba(10,16,20,0.3); border-radius: 7px; }
+canvas.perf-chart.compact { height: 120px; }
+#shardDistribution { margin-top: 16px; }
+#scaleIndexSummary { margin-top: 8px; line-height: 1.5; }
 
 h2 { margin: 4px 0 2px; font-size: 21px; }
 h3 { margin: 18px 0 7px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
@@ -333,6 +349,8 @@ canvas#timeline { width: 100%; height: 36px; border-radius: 6px; background: var
   .control-panel { grid-template-columns: 1fr; gap: 14px; }
   .control-groups { justify-content: flex-start; flex-wrap: wrap; }
   .query-grid { grid-template-columns: 1fr; }
+  .scale-grid { grid-template-columns: 1fr; }
+  .scale-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {

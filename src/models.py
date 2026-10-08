@@ -1,18 +1,33 @@
-NPC_IDS = [f"NPC_{i:02d}" for i in range(1, 13)]
-NPC_NAMES = {
-    "NPC_01": "Aldric", "NPC_02": "Brenna", "NPC_03": "Cedric", "NPC_04": "Dara",
-    "NPC_05": "Elowen", "NPC_06": "Fenn", "NPC_07": "Garrick", "NPC_08": "Hilda",
-    "NPC_09": "Ivor", "NPC_10": "Jora", "NPC_11": "Kael", "NPC_12": "Lyra",
-}
+DEFAULT_NPC_COUNT = 12
+MAX_NPCS = 120
+NPC_NAME_POOL = [
+    "Aldric", "Brenna", "Cedric", "Dara", "Elowen", "Fenn",
+    "Garrick", "Hilda", "Ivor", "Jora", "Kael", "Lyra",
+]
+NPC_ROLE_PATTERN = [
+    "Market", "Market", "Market", "Tavern", "Tavern", "Tavern",
+    "Barracks", "Barracks", "Barracks", "Watchtower", "Watchtower", "Watchtower",
+]
 
-# Each NPC's permanent role, independent of whatever they're doing right
-# now, so a merchant still looks like a merchant even while fleeing.
-NPC_ROLES = {
-    "NPC_01": "Market", "NPC_02": "Market", "NPC_03": "Market",
-    "NPC_04": "Tavern", "NPC_05": "Tavern", "NPC_06": "Tavern",
-    "NPC_07": "Barracks", "NPC_08": "Barracks", "NPC_09": "Barracks",
-    "NPC_10": "Watchtower", "NPC_11": "Watchtower", "NPC_12": "Watchtower",
-}
+
+def make_npc_roster(count):
+    ids = [f"NPC_{i:02d}" for i in range(1, count + 1)]
+    names = {
+        npc_id: (
+            NPC_NAME_POOL[(i - 1) % len(NPC_NAME_POOL)]
+            if i <= len(NPC_NAME_POOL)
+            else f"{NPC_NAME_POOL[(i - 1) % len(NPC_NAME_POOL)]} {i}"
+        )
+        for i, npc_id in enumerate(ids, 1)
+    }
+    roles = {
+        npc_id: NPC_ROLE_PATTERN[(i - 1) % len(NPC_ROLE_PATTERN)]
+        for i, npc_id in enumerate(ids, 1)
+    }
+    return ids, names, roles
+
+
+NPC_IDS, NPC_NAMES, NPC_ROLES = make_npc_roster(DEFAULT_NPC_COUNT)
 
 WORLD_W = 100
 WORLD_H = 80

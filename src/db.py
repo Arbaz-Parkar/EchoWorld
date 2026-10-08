@@ -43,4 +43,12 @@ def reset_all():
     redis_client.delete("sim:tick")
 
 
+def clear_live_state():
+    """Clear the live view when a new run is configured, keeping Mongo history."""
+    keys = list(redis_client.scan_iter("npc:live:*"))
+    if keys:
+        redis_client.delete(*keys)
+    redis_client.delete(GEO_KEY, "sim:tick")
+
+
 ensure_indexes()
