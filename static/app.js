@@ -21,6 +21,8 @@ const state = {
   stats: null,
   performance: { snapshot: null, querySamples: [], indexComparison: null, loading: false },
   showTrails: true,
+  mapFilter: "all",
+  camera: { zoom: 1, panX: 0, panY: 0, drag: null, suppressClick: false },
   lastTs: 0,
   lastPanel: 0,
   lastScanTick: -1,
@@ -32,6 +34,8 @@ const state = {
 
 const canvas = $("map");
 const ctx = canvas.getContext("2d");
+const minimap = $("minimapMap");
+const minimapCtx = minimap.getContext("2d");
 let scale = 1;
 let dpr = 1;
 let pollBusy = false;
@@ -181,6 +185,7 @@ async function init() {
   buildLegend();
   buildZoneChips();
   buildNpcSelect();
+  buildMapNavigation();
   renderConcepts();
   buildScenery();
   wireEvents();
@@ -256,9 +261,56 @@ function buildNpcSelect() {
   }
 }
 
+function buildMapNavigation() {
+  const options = $("npcOptions");
+  options.replaceChildren();
+  for (const npc of state.meta.npcs) {
+    const option = document.createElement("option");
+    option.value = npc.name + " (" + npc.id + ")";
+    options.appendChild(option);
+  }
+
+  const filters = $("districtFilters");
+  const all = document.createElement("button");
+  all.type = "button";
+  all.className = "filter-chip active";
+  all.dataset.district = "all";
+  all.textContent = "All";
+  all.onclick = () => setDistrictFilter("all");
+  filters.appendChild(all);
+  for (const zone of state.meta.zones) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filter-chip";
+    button.dataset.district = zone.name;
+    button.textContent = zone.name;
+    button.onclick = () => {
+      setDistrictFilter(zone.name);
+      setCameraCenter(zone.x, zone.y, Math.max(state.camera.zoom, 1.45));
+    };
+    filters.appendChild(button);
+  }
+  updateDistrictStatus();
+}
+
 function wireEvents() {
   window.addEventListener("resize", resize);
   canvas.addEventListener("click", onCanvasClick);
+  canvas.addEventListener("wheel", onMapWheel, { passive: false });
+  canvas.addEventListener("pointerdown", startMapPan);
+  canvas.addEventListener("pointermove", moveMapPan);
+  canvas.addEventListener("pointerup", endMapPan);
+  canvas.addEventListener("pointercancel", endMapPan);
+
+  $("btnZoomIn").onclick = () => zoomMap(state.camera.zoom * 1.25);
+  $("btnZoomOut").onclick = () => zoomMap(state.camera.zoom / 1.25);
+  $("btnResetView").onclick = resetMapView;
+  $("btnFindNpc").onclick = findNpc;
+  $("npcSearch").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") findNpc();
+  });
+  $("btnToggleMinimap").onclick = toggleMinimap;
+  minimap.addEventListener("click", onMinimapClick);
 
   $("modeLive").onclick = () => setMode("live");
   $("modeReplay").onclick = () => setMode("replay");
@@ -336,6 +388,237 @@ function resize() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   scale = canvas.width / state.meta.world.w;
+  clampCamera();
+  updateZoomLabel();
+}
+
+function updateZoomLabel() {
+  $("zoomLabel").textContent = Math.round(state.camera.zoom * 100) + "%";
+}
+
+function clampCamera() {
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || canvas.clientWidth || 900;
+  const height = rect.height || canvas.clientHeight || width * state.meta.world.h / state.meta.world.w;
+  const maxX = width * (state.camera.zoom - 1) / 2;
+  const maxY = height * (state.camera.zoom - 1) / 2;
+  state.camera.panX = Math.max(-maxX, Math.min(maxX, state.camera.panX));
+  state.camera.panY = Math.max(-maxY, Math.min(maxY, state.camera.panY));
+}
+
+function zoomMap(nextZoom, anchorX, anchorY) {
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+  const x = anchorX === undefined ? centerX : anchorX;
+  const y = anchorY === undefined ? centerY : anchorY;
+  const oldZoom = state.camera.zoom;
+  const newZoom = Math.max(1, Math.min(4, nextZoom));
+  const baseX = (x - centerX - state.camera.panX) / oldZoom + centerX;
+  const baseY = (y - centerY - state.camera.panY) / oldZoom + centerY;
+  state.camera.zoom = newZoom;
+  state.camera.panX = x - centerX - newZoom * (baseX - centerX);
+  state.camera.panY = y - centerY - newZoom * (baseY - centerY);
+  clampCamera();
+  updateZoomLabel();
+}
+
+function setCameraCenter(worldX, worldY, nextZoom = state.camera.zoom) {
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  state.camera.zoom = Math.max(1, Math.min(4, nextZoom));
+  const baseX = worldX / state.meta.world.w * rect.width;
+  const baseY = worldY / state.meta.world.h * rect.height;
+  state.camera.panX = (rect.width / 2) - state.camera.zoom * (baseX - rect.width / 2);
+  state.camera.panY = (rect.height / 2) - state.camera.zoom * (baseY - rect.height / 2);
+  clampCamera();
+  updateZoomLabel();
+}
+
+function resetMapView() {
+  state.camera.zoom = 1;
+  state.camera.panX = 0;
+  state.camera.panY = 0;
+  clampCamera();
+  updateZoomLabel();
+}
+
+function onMapWheel(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const direction = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  zoomMap(state.camera.zoom * direction, e.clientX - rect.left, e.clientY - rect.top);
+}
+
+function startMapPan(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  state.camera.drag = {
+    pointerId: e.pointerId,
+    startX: e.clientX,
+    startY: e.clientY,
+    lastX: e.clientX,
+    lastY: e.clientY,
+    moved: false,
+  };
+  canvas.setPointerCapture(e.pointerId);
+}
+
+function moveMapPan(e) {
+  const drag = state.camera.drag;
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 3) drag.moved = true;
+  if (!drag.moved) return;
+  state.camera.panX += e.clientX - drag.lastX;
+  state.camera.panY += e.clientY - drag.lastY;
+  drag.lastX = e.clientX;
+  drag.lastY = e.clientY;
+  clampCamera();
+  canvas.style.cursor = "grabbing";
+}
+
+function endMapPan(e) {
+  const drag = state.camera.drag;
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  state.camera.suppressClick = drag.moved;
+  state.camera.drag = null;
+  canvas.style.cursor = "grab";
+  if (state.camera.suppressClick) {
+    setTimeout(() => { state.camera.suppressClick = false; }, 250);
+  }
+}
+
+function setDistrictFilter(district) {
+  state.mapFilter = district;
+  document.querySelectorAll(".filter-chip").forEach((button) => {
+    button.classList.toggle("active", button.dataset.district === district);
+  });
+  updateDistrictStatus();
+}
+
+function npcMatchesActiveDistrict(npc) {
+  return state.mapFilter === "all" || npc.zone === state.mapFilter || npc.target === state.mapFilter;
+}
+
+function updateDistrictStatus() {
+  const visible = state.npcs.filter(npcMatchesActiveDistrict).length;
+  const label = state.mapFilter === "all" ? "all districts" : state.mapFilter;
+  const text = "Showing " + visible + " / " + state.npcs.length + " NPCs in " + label;
+  if ($("districtStatus").textContent !== text) $("districtStatus").textContent = text;
+}
+
+function onMinimapClick(e) {
+  const rect = minimap.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+  setCameraCenter(x * state.meta.world.w, y * state.meta.world.h);
+}
+
+function drawMinimap() {
+  if (!state.meta || minimap.hidden) return;
+  const width = minimap.width;
+  const height = minimap.height;
+  const world = state.meta.world;
+  const sx = width / world.w;
+  const sy = height / world.h;
+  const mx = (x) => x * sx;
+  const my = (y) => y * sy;
+
+  minimapCtx.clearRect(0, 0, width, height);
+  minimapCtx.fillStyle = "#243629";
+  minimapCtx.fillRect(0, 0, width, height);
+  minimapCtx.fillStyle = "#625b49";
+  minimapCtx.beginPath();
+  minimapCtx.ellipse(mx(50), my(40), mx(45), my(34), 0, 0, Math.PI * 2);
+  minimapCtx.fill();
+  minimapCtx.strokeStyle = "rgba(221,199,154,0.65)";
+  minimapCtx.lineWidth = 2;
+  minimapCtx.stroke();
+
+  minimapCtx.strokeStyle = "rgba(221,199,154,0.32)";
+  minimapCtx.lineWidth = 2;
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(mx(50), my(40));
+  for (const zone of state.meta.zones) {
+    minimapCtx.moveTo(mx(50), my(40));
+    minimapCtx.lineTo(mx(zone.x), my(zone.y));
+  }
+  minimapCtx.stroke();
+
+  for (const zone of state.meta.zones) {
+    minimapCtx.beginPath();
+    minimapCtx.arc(mx(zone.x), my(zone.y), Math.max(3, zone.r * sx * 0.55), 0, Math.PI * 2);
+    minimapCtx.fillStyle = zone.name === state.mapFilter ? "#e8bd64" : zone.color;
+    minimapCtx.globalAlpha = 0.78;
+    minimapCtx.fill();
+    minimapCtx.globalAlpha = 1;
+  }
+
+  for (const npc of state.npcs) {
+    minimapCtx.beginPath();
+    minimapCtx.arc(mx(npc.x), my(npc.y), npc.id === state.selected ? 3.2 : 2, 0, Math.PI * 2);
+    minimapCtx.fillStyle = npc.id === state.selected ? "#ffffff" : "#62d5ff";
+    minimapCtx.globalAlpha = npcMatchesActiveDistrict(npc) ? 1 : 0.28;
+    minimapCtx.fill();
+    minimapCtx.globalAlpha = 1;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width && rect.height) {
+    const leftBase = (0 - rect.width / 2 - state.camera.panX) / state.camera.zoom + rect.width / 2;
+    const topBase = (0 - rect.height / 2 - state.camera.panY) / state.camera.zoom + rect.height / 2;
+    const visibleWidth = rect.width / state.camera.zoom;
+    const visibleHeight = rect.height / state.camera.zoom;
+    const left = Math.max(0, Math.min(width, leftBase / rect.width * width));
+    const top = Math.max(0, Math.min(height, topBase / rect.height * height));
+    const right = Math.max(left, Math.min(width, (leftBase + visibleWidth) / rect.width * width));
+    const bottom = Math.max(top, Math.min(height, (topBase + visibleHeight) / rect.height * height));
+    minimapCtx.fillStyle = "rgba(255,255,255,0.07)";
+    minimapCtx.fillRect(left, top, right - left, bottom - top);
+    minimapCtx.strokeStyle = "#ffffff";
+    minimapCtx.lineWidth = 2;
+    minimapCtx.setLineDash([5, 3]);
+    minimapCtx.strokeRect(left, top, right - left, bottom - top);
+    minimapCtx.setLineDash([]);
+  }
+}
+
+async function findNpc() {
+  const query = $("npcSearch").value.trim().toLocaleLowerCase();
+  if (!query) {
+    $("npcSearchStatus").textContent = "Enter a name or NPC ID.";
+    return;
+  }
+  const entries = state.meta.npcs;
+  let npc = entries.find((item) =>
+    item.id.toLocaleLowerCase() === query || item.name.toLocaleLowerCase() === query ||
+    (item.name + " (" + item.id + ")").toLocaleLowerCase() === query
+  );
+  if (!npc) {
+    const matches = entries.filter((item) =>
+      item.id.toLocaleLowerCase().includes(query) || item.name.toLocaleLowerCase().includes(query)
+    );
+    if (matches.length === 1) npc = matches[0];
+  }
+  if (!npc) {
+    $("npcSearchStatus").textContent = "Choose one NPC from the suggestions.";
+    return;
+  }
+
+  setDistrictFilter("all");
+  const position = state.npcs.find((item) => item.id === npc.id);
+  const fallbackZone = state.meta.zones.find((zone) => zone.name === npc.role);
+  const target = position || fallbackZone;
+  if (target) setCameraCenter(target.x, target.y, Math.max(state.camera.zoom, 2));
+  $("npcSearchStatus").textContent = "Focused on " + npc.name + " (" + npc.id + ").";
+  await selectNpc(npc.id);
+}
+
+function toggleMinimap() {
+  minimap.hidden = !minimap.hidden;
+  const button = $("btnToggleMinimap");
+  button.textContent = minimap.hidden ? "Show" : "Hide";
+  button.setAttribute("aria-expanded", minimap.hidden ? "false" : "true");
 }
 
 function showTab(name) {
@@ -627,6 +910,7 @@ function frame(ts) {
   updateWorldClock();
 
   state.npcs = currentNpcs(dt);
+  updateDistrictStatus();
   if (state.mode === "replay") detectReplayEvents(Math.floor(state.playhead));
   draw(ts / 1000);
 
@@ -796,7 +1080,14 @@ function draw(t) {
   const worldTime = gameTimeAtTick(state.mode === "live" ? state.live.tick : state.playhead);
   const daylight = Math.max(0, Math.sin((worldTime.hour - 6) * Math.PI / 12));
   const nightAmount = 1 - daylight;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.setTransform(
+    state.camera.zoom, 0, 0, state.camera.zoom,
+    (W * (1 - state.camera.zoom) / 2) + state.camera.panX * dpr,
+    (H * (1 - state.camera.zoom) / 2) + state.camera.panY * dpr,
+  );
   drawGround(W, H);
   drawScenery();
   drawCityWall();
@@ -815,11 +1106,13 @@ function draw(t) {
   }
   if (state.showTrails) drawTrails();
   drawProbe();
-  const sorted = state.npcs.slice().sort((a, b) => a.y - b.y);
+  const sorted = state.npcs.filter(npcMatchesActiveDistrict).slice().sort((a, b) => a.y - b.y);
   sorted.forEach((n) => drawAvatar(n, t));
   drawAnomalyRings(t);
   drawFireflies(t, nightAmount);
+  ctx.restore();
   drawVignette(W, H);
+  drawMinimap();
 }
 
 function drawGround(W, H) {
@@ -1479,6 +1772,7 @@ function drawTrails() {
   ctx.lineWidth = Math.max(1, scale * 0.3);
   ctx.lineCap = "round";
   for (const n of state.npcs) {
+    if (!npcMatchesActiveDistrict(n)) continue;
     const pts = trailFor(n.id);
     const hue = hueOf(n.id);
     for (let i = 1; i < pts.length; i++) {
@@ -1766,7 +2060,7 @@ function drawAnomalyRings(t) {
     const age = now - a.tick;
     if (age < 0 || age > 5) continue;
     const n = state.npcs.find((q) => q.id === a.npc_id);
-    if (!n) continue;
+    if (!n || !npcMatchesActiveDistrict(n)) continue;
     const r = (2 + age * 2.2) * scale * 0.6;
     ctx.strokeStyle = "rgba(239,83,80," + (1 - age / 5) + ")";
     ctx.lineWidth = 3;
@@ -1783,9 +2077,17 @@ function drawAnomalyRings(t) {
 /* ---------- interaction ---------- */
 
 function onCanvasClick(e) {
+  if (state.camera.suppressClick) {
+    state.camera.suppressClick = false;
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
-  const wx = ((e.clientX - rect.left) / rect.width) * state.meta.world.w;
-  const wy = ((e.clientY - rect.top) / rect.height) * state.meta.world.h;
+  const screenX = e.clientX - rect.left;
+  const screenY = e.clientY - rect.top;
+  const baseX = (screenX - rect.width / 2 - state.camera.panX) / state.camera.zoom + rect.width / 2;
+  const baseY = (screenY - rect.height / 2 - state.camera.panY) / state.camera.zoom + rect.height / 2;
+  const wx = (baseX / rect.width) * state.meta.world.w;
+  const wy = (baseY / rect.height) * state.meta.world.h;
 
   if (state.probeMode) {
     state.probeMode = false;
@@ -1798,6 +2100,7 @@ function onCanvasClick(e) {
   let best = null;
   let bestD = 5;
   for (const n of state.npcs) {
+    if (!npcMatchesActiveDistrict(n)) continue;
     const d = Math.hypot(n.x - wx, n.y - (wy + 4));
     if (d < bestD) {
       bestD = d;

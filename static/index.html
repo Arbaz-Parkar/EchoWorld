@@ -67,11 +67,37 @@
           <span class="eyebrow">WORLD VIEW</span>
           <h2 id="worldHeading">The settlement</h2>
         </div>
-        <p>Click a character to inspect their memory. Use Replay to explore recorded history.</p>
+        <p>Scroll or use the zoom controls, then drag to pan. Use the minimap, district filters, or NPC search to find a place or character.</p>
+      </div>
+      <div class="map-toolbar" aria-label="Map navigation">
+        <div class="map-zoom-controls" role="group" aria-label="Zoom controls">
+          <button id="btnZoomOut" type="button" aria-label="Zoom out">−</button>
+          <span id="zoomLabel">100%</span>
+          <button id="btnZoomIn" type="button" aria-label="Zoom in">+</button>
+          <button id="btnResetView" type="button">Reset view</button>
+        </div>
+        <div class="map-search">
+          <label class="sr-only" for="npcSearch">Search NPCs</label>
+          <input id="npcSearch" type="search" list="npcOptions" placeholder="Search NPC name or ID">
+          <datalist id="npcOptions"></datalist>
+          <button id="btnFindNpc" type="button">Find NPC</button>
+          <span id="npcSearchStatus" class="sub" aria-live="polite"></span>
+        </div>
+      </div>
+      <div id="districtFilters" class="district-filters" aria-label="Filter NPCs by district">
+        <span class="filter-label">District</span>
+        <span id="districtStatus" class="sub" aria-live="polite"></span>
       </div>
       <div class="canvas-wrap">
         <canvas id="map"></canvas>
         <div id="hint" class="hint"></div>
+        <aside class="minimap-panel" aria-label="Settlement minimap">
+          <div class="minimap-heading">
+            <span>SETTLEMENT MAP</span>
+            <button id="btnToggleMinimap" type="button" aria-expanded="true">Hide</button>
+          </div>
+          <canvas id="minimapMap" width="240" height="192" aria-label="Click to move the main map"></canvas>
+        </aside>
       </div>
       <div class="playbar">
         <div id="replayControls" class="replay-controls" hidden>
