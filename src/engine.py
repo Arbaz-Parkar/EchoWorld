@@ -10,6 +10,7 @@ from .models import (
     WALK_SPEED, FLEE_SPEED, DWELL_RANGE, FLEE_CHANCE, MAX_TICKS,
     TICK_SECONDS, ANOMALY_NPC, ANOMALY_TICK,
     DEFAULT_NPC_COUNT, MAX_NPCS, make_npc_roster,
+    GAME_MINUTES_PER_TICK, GAME_START_MINUTES, ROLE_SCHEDULES,
 )
 from .writer import write_frame
 from .db import reset_all, clear_live_state
@@ -276,16 +277,21 @@ class Engine:
         self.rng = random.Random()
         self.tick = 0
         self.npcs = []
-        for npc_id in self.npc_ids:
+        for index, npc_id in enumerate(self.npc_ids):
             zone = ZONE_BY_NAME[self.npc_roles[npc_id]]
             x, y = self._initial_position(zone)
+            house = CITY_HOUSES[index % len(CITY_HOUSES)]
+            home_cell = _nearest_open_cell((house["x"], house["y"] + 3.0 * house["scale"]))
+            home = _grid_point(home_cell) if home_cell else _zone_stand_point(zone)
             self.npcs.append({
                 "id": npc_id,
                 "x": round(x, 2),
                 "y": round(y, 2),
                 "activity": zone["activity"],
+                "routine": None,
                 "zone": zone["name"],
                 "target": None,
+                "home": home,
                 "decision_note": "Still learning the city; the first recorded choices will shape future visits.",
                 "incident_zone": None,
                 "incident_tick": None,
@@ -408,11 +414,78 @@ class Engine:
                 break
         n["path_index"] = index
 
+    def _minute_in_window(self, minute, start, end):
+        if start < end:
+            return start <= minute < end
+        return minute >= start or minute < end
+
+    def _routine_at_current_time(self, n):
+        minute = (GAME_START_MINUTES + self.tick * GAME_MINUTES_PER_TICK) % (24 * 60)
+        schedule = ROLE_SCHEDULES[self.npc_roles[n["id"]]]
+        if self._minute_in_window(minute, schedule["sleep_start"], schedule["sleep_end"]):
+            return "sleep"
+        if self._minute_in_window(minute, schedule["work_start"], schedule["work_end"]):
+            return "work"
+        return "leisure"
+
+    def _begin_routine(self, n, routine):
+        n["routine"] = routine
+        if routine == "sleep":
+            n["target"] = "Home"
+            n["decision_note"] = "Heading home for the scheduled sleep period."
+            n["path"] = _find_path((n["x"], n["y"]), n["home"])
+            n["path_index"] = 1 if len(n["path"]) > 1 else 0
+            n["mode"] = "travel"
+            n["activity"] = "walking"
+        elif routine == "work":
+            target_name = self.npc_roles[n["id"]]
+            self._assign_target(n, target_name, f"Reporting for the scheduled {target_name} shift.")
+            n["mode"] = "travel"
+            n["activity"] = "walking"
+        else:
+            target_name, note = self._pick_target(n)
+            self._assign_target(n, target_name, note)
+            n["mode"] = "travel"
+            n["activity"] = "walking"
+
+    def _step_scheduled_travel(self, n, target_name, goal, arrival_activity, arrival_zone):
+        if math.dist((n["x"], n["y"]), goal) <= 0.65:
+            n["x"], n["y"] = goal
+            n["mode"] = "dwell"
+            n["zone"] = arrival_zone
+            n["target"] = None
+            n["path"] = []
+            n["path_index"] = 0
+            n["activity"] = arrival_activity
+            return
+
+        if n["target"] != target_name or not n["path"] or n["path_index"] >= len(n["path"]):
+            n["target"] = target_name
+            n["path"] = _find_path((n["x"], n["y"]), goal)
+            n["path_index"] = 1 if len(n["path"]) > 1 else 0
+        self._move_on_path(n, WALK_SPEED)
+        n["zone"] = zone_at(n["x"], n["y"])
+        n["activity"] = "walking"
+
     def _step_npc(self, n):
         rng = self.rng
 
         if n["mode"] == "flee":
             self._step_flee(n)
+            return
+
+        routine = self._routine_at_current_time(n)
+        if routine != n["routine"]:
+            self._begin_routine(n, routine)
+
+        if routine == "sleep":
+            self._step_scheduled_travel(n, "Home", n["home"], "sleeping", None)
+            return
+        if routine == "work":
+            zone = ZONE_BY_NAME[self.npc_roles[n["id"]]]
+            self._step_scheduled_travel(
+                n, zone["name"], _zone_stand_point(zone), zone["activity"], zone["name"],
+            )
             return
 
         if n["mode"] == "dwell":
@@ -473,7 +546,7 @@ class Engine:
                 n["y"] = round(n["y"], 2)
             frame = [
                 {"id": n["id"], "x": n["x"], "y": n["y"], "activity": n["activity"],
-                 "zone": n["zone"], "target": n["target"],
+                 "zone": n["zone"], "target": n["target"], "routine": n["routine"],
                  "decision_note": n["decision_note"],
                  "incident_zone": n["incident_zone"],
                  "incident_tick": n["incident_tick"]}

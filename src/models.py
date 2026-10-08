@@ -39,6 +39,21 @@ ACTIVITY_COLORS = {
     "fighting": "#ef5350",
     "patrolling": "#81c784",
     "fleeing": "#ff9800",
+    "sleeping": "#9fa8da",
+}
+
+# The accelerated game clock advances ten minutes for each simulation tick.
+# A complete in-game day therefore takes 144 ticks, or 36 seconds at live speed.
+GAME_MINUTES_PER_TICK = 10
+GAME_START_MINUTES = 6 * 60
+
+# Times use minutes after midnight. End times may be earlier than start times
+# for shifts and sleep periods that continue across midnight.
+ROLE_SCHEDULES = {
+    "Market": {"work_start": 7 * 60, "work_end": 17 * 60, "sleep_start": 22 * 60, "sleep_end": 6 * 60},
+    "Tavern": {"work_start": 14 * 60, "work_end": 2 * 60, "sleep_start": 3 * 60, "sleep_end": 11 * 60},
+    "Barracks": {"work_start": 6 * 60, "work_end": 18 * 60, "sleep_start": 22 * 60, "sleep_end": 6 * 60},
+    "Watchtower": {"work_start": 18 * 60, "work_end": 6 * 60, "sleep_start": 8 * 60, "sleep_end": 16 * 60},
 }
 
 ZONES = [

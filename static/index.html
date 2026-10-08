@@ -85,6 +85,10 @@
           <input type="range" id="scrub" min="1" max="1" value="1">
         </div>
         <span id="tickLabel">tick 0</span>
+        <div class="world-clock" aria-live="polite">
+          <strong id="worldTime">Day 1 · 06:00</strong>
+          <span id="worldPhase">Dawn</span>
+        </div>
         <label class="chk"><input type="checkbox" id="chkTrails" checked> trails</label>
       </div>
       <div class="legend" id="legend"></div>
@@ -112,6 +116,10 @@
           <h2 id="npcName"></h2>
           <div class="sub"><span id="npcId"></span> <span class="chip" id="npcShard"></span></div>
           <div class="now" id="npcNow"></div>
+          <div class="memory-card routine-card">
+            <div class="eyebrow">Daily routine</div>
+            <p id="npcSchedule"></p>
+          </div>
           <div class="lat" id="npcLat"></div>
           <div class="memory-card">
             <div class="eyebrow">Behavioral memory</div>

@@ -204,6 +204,18 @@ canvas#map { display: block; width: 100%; cursor: pointer; }
 }
 
 .playbar { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.world-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.world-clock strong { color: var(--text); font-size: 12px; }
+.world-clock span { color: var(--accent2); font-size: 11px; }
 .replay-controls { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .replay-controls[hidden] { display: none; }
 .replay-controls input[type="range"] { flex: 1; min-width: 40px; accent-color: var(--accent); }
@@ -261,6 +273,7 @@ h3 { margin: 18px 0 7px; font-size: 11.5px; text-transform: uppercase; letter-sp
 }
 .memory-card .eyebrow { color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
 .memory-card p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.routine-card { border-left: 3px solid var(--accent2); }
 .empty, .note { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .field { display: block; color: var(--muted); font-size: 12px; margin: 10px 0; }
@@ -371,4 +384,5 @@ canvas#timeline { width: 100%; height: 36px; border-radius: 6px; background: var
   .playbar { flex-wrap: wrap; }
   .replay-controls { flex-basis: 100%; }
   #tickLabel { min-width: 0; }
+  .world-clock { margin-left: auto; }
 }

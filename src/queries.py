@@ -14,7 +14,7 @@ from .models import NPC_IDS, MAX_PLAUSIBLE_STEP, MEMORY_AVOID_TICKS
 
 PROJECTION = {
     "_id": 0, "npc_id": 1, "tick": 1, "x": 1, "y": 1,
-    "location": 1, "activity": 1, "zone": 1, "target": 1,
+    "location": 1, "activity": 1, "zone": 1, "target": 1, "routine": 1,
 }
 
 BEHAVIOR_PROJECTION = {
@@ -29,6 +29,7 @@ def _npc_view(d):
     return {
         "id": d["npc_id"], "x": x, "y": y, "activity": d["activity"],
         "zone": d.get("zone") or None, "target": d.get("target") or None,
+        "routine": d.get("routine") or None,
     }
 
 
@@ -49,6 +50,7 @@ def live_snapshot(npc_ids=NPC_IDS):
                 "id": npc_id, "x": float(h["x"]), "y": float(h["y"]),
                 "activity": h["activity"],
                 "zone": h.get("zone") or None, "target": h.get("target") or None,
+                "routine": h.get("routine") or None,
             })
     return {"tick": int(results[-1] or 0), "npcs": npcs, "ms": round(ms, 3), "source": "redis"}
 

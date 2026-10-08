@@ -110,6 +110,11 @@ function describeEvent(id, prev, curr) {
   if (curr.activity === "fleeing" && (!prev || prev.activity !== "fleeing")) {
     return name + " suddenly ran off.";
   }
+  if (prev && prev.routine !== curr.routine && curr.routine) {
+    if (curr.routine === "sleep") return name + " finished the day and is heading home to sleep.";
+    if (curr.routine === "work") return name + " started a shift at the " + roleOf(id) + ".";
+    return name + " finished work and has free time to explore.";
+  }
   if (prev && prev.activity !== curr.activity) {
     if (curr.activity === "walking" && curr.target) {
       return name + " set off toward the " + curr.target + ".";
@@ -148,7 +153,9 @@ function detectLiveEvents(npcs) {
   for (const n of npcs) {
     const prev = state.tickerPrevLive.get(n.id);
     queueTicker(describeEvent(n.id, prev, n));
-    state.tickerPrevLive.set(n.id, { activity: n.activity, zone: n.zone, target: n.target });
+    state.tickerPrevLive.set(n.id, {
+      activity: n.activity, zone: n.zone, target: n.target, routine: n.routine,
+    });
   }
 }
 
@@ -523,6 +530,33 @@ function updateTickLabel() {
   }
 }
 
+function gameTimeAtTick(tick) {
+  const timing = state.meta.game_time;
+  const totalMinutes = timing.start_minutes + Math.max(0, tick) * timing.minutes_per_tick;
+  const elapsedDays = Math.floor(totalMinutes / 1440);
+  const minutes = Math.floor(totalMinutes % 1440);
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  let phase = "Day";
+  if (hour < 5 || hour >= 21) phase = "Night";
+  else if (hour < 7) phase = "Dawn";
+  else if (hour >= 18) phase = "Dusk";
+  return {
+    day: elapsedDays + 1,
+    minutes,
+    hour: (totalMinutes % 1440) / 60,
+    phase,
+    label: "Day " + (elapsedDays + 1) + " · " + String(hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0"),
+  };
+}
+
+function updateWorldClock() {
+  const tick = state.mode === "live" ? state.live.tick : state.playhead;
+  const time = gameTimeAtTick(tick);
+  $("worldTime").textContent = time.label;
+  $("worldPhase").textContent = time.phase;
+}
+
 async function seekTo(tick) {
   if (state.mode !== "replay") await setMode("replay");
   await syncFrames();
@@ -548,7 +582,10 @@ function currentNpcs(dt) {
         d.y += (t.y - d.y) * k;
       }
       state.live.disp.set(id, d);
-      out.push({ id, x: d.x, y: d.y, activity: t.activity, zone: t.zone, target: t.target });
+      out.push({
+        id, x: d.x, y: d.y, activity: t.activity, zone: t.zone,
+        target: t.target, routine: t.routine,
+      });
     }
   } else {
     const t0 = Math.floor(state.playhead);
@@ -565,7 +602,7 @@ function currentNpcs(dt) {
           id: a.id,
           x: a.x + (b.x - a.x) * m,
           y: a.y + (b.y - a.y) * m,
-          activity: a.activity, zone: a.zone, target: a.target,
+          activity: a.activity, zone: a.zone, target: a.target, routine: a.routine,
         });
       }
     }
@@ -587,6 +624,7 @@ function frame(ts) {
     $("scrub").value = Math.floor(state.playhead);
   }
   updateTickLabel();
+  updateWorldClock();
 
   state.npcs = currentNpcs(dt);
   if (state.mode === "replay") detectReplayEvents(Math.floor(state.playhead));
@@ -728,12 +766,12 @@ function drawScenery() {
   for (const p of state.scenery.props) drawProp(p);
 }
 
-function drawFireflies(t) {
-  if (!state.scenery) return;
+function drawFireflies(t, nightAmount) {
+  if (!state.scenery || nightAmount < 0.12) return;
   for (const f of state.scenery.fireflies) {
     const px = (f.x + Math.sin(t * f.speed + f.phase) * 2) * scale;
     const py = (f.y + Math.cos(t * f.speed * 0.7 + f.phase) * 2) * scale;
-    const glow = Math.max(0.15, 0.4 + Math.sin(t * 2 + f.phase) * 0.3);
+    const glow = nightAmount * Math.max(0.15, 0.4 + Math.sin(t * 2 + f.phase) * 0.3);
     ctx.shadowColor = "rgba(255,230,140,0.8)";
     ctx.shadowBlur = scale * 0.6;
     ctx.fillStyle = "rgba(255,240,160," + glow + ")";
@@ -755,6 +793,9 @@ function drawVignette(W, H) {
 function draw(t) {
   const W = canvas.width;
   const H = canvas.height;
+  const worldTime = gameTimeAtTick(state.mode === "live" ? state.live.tick : state.playhead);
+  const daylight = Math.max(0, Math.sin((worldTime.hour - 6) * Math.PI / 12));
+  const nightAmount = 1 - daylight;
   ctx.clearRect(0, 0, W, H);
   drawGround(W, H);
   drawScenery();
@@ -763,12 +804,21 @@ function draw(t) {
   drawRoadNetwork();
   drawCityBlocks();
   drawZones();
+  ctx.fillStyle = "rgba(13, 22, 48, " + (nightAmount * 0.48) + ")";
+  ctx.fillRect(0, 0, W, H);
+  const dawnGlow = Math.max(0, 1 - Math.abs(worldTime.hour - 6) / 2);
+  const duskGlow = Math.max(0, 1 - Math.abs(worldTime.hour - 18) / 2);
+  const warmGlow = Math.max(dawnGlow, duskGlow) * 0.12;
+  if (warmGlow > 0) {
+    ctx.fillStyle = "rgba(220, 143, 73, " + warmGlow + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
   if (state.showTrails) drawTrails();
   drawProbe();
   const sorted = state.npcs.slice().sort((a, b) => a.y - b.y);
   sorted.forEach((n) => drawAvatar(n, t));
   drawAnomalyRings(t);
-  drawFireflies(t);
+  drawFireflies(t, nightAmount);
   drawVignette(W, H);
 }
 
@@ -1699,6 +1749,14 @@ function drawAccessory(activity, px, py, u, bob, face, t, color) {
     ctx.textAlign = "center";
     ctx.fillText("z", px + face * 3.2 * u, py - (11 + rise * 4) * u);
     ctx.globalAlpha = 1;
+  } else if (activity === "sleeping") {
+    const rise = (t * 0.45) % 1;
+    ctx.globalAlpha = 1 - rise * 0.55;
+    ctx.font = "bold " + Math.round(12 * dpr) + "px system-ui, sans-serif";
+    ctx.fillStyle = "#d9dcff";
+    ctx.textAlign = "center";
+    ctx.fillText("z", px + face * 3.2 * u, py - (11 + rise * 4) * u);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1850,6 +1908,20 @@ function updateNowPanel() {
   else if (n.zone) text += " at the " + n.zone;
   text += "  (position " + n.x.toFixed(1) + ", " + n.y.toFixed(1) + ")";
   $("npcNow").textContent = "Right now: " + text;
+  const character = state.meta.npcs.find((item) => item.id === n.id);
+  const schedule = character && character.schedule;
+  if (schedule) {
+    const routine = n.routine === "sleep" ? "sleeping"
+      : n.routine === "work" ? "on shift"
+        : n.routine === "leisure" ? "free time" : "between routines";
+    const clock = (minutes) => String(Math.floor(minutes / 60)).padStart(2, "0") + ":" +
+      String(minutes % 60).padStart(2, "0");
+    $("npcSchedule").textContent =
+      "Currently " + routine + ". Work at the " + character.role + " " +
+      clock(schedule.work_start) + "–" + clock(schedule.work_end) +
+      "; sleep " + clock(schedule.sleep_start) + "–" + clock(schedule.sleep_end) +
+      "; home: " + schedule.home + ".";
+  }
   drawTimeline();
 }
 

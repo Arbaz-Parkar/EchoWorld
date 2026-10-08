@@ -7,7 +7,7 @@ Each run starts with randomized NPC positions and behavior. The browser interfac
 ## What it demonstrates
 
 - **Live state in Redis:** Each NPC's current state is stored as a Redis hash. Redis GEO supports nearby-character lookups.
-- **History in MongoDB:** Every simulation tick is stored as a document with the NPC's position, activity, zone, target, timestamp, and run ID.
+- **History in MongoDB:** Every simulation tick is stored as a document with the NPC's position, activity, routine, zone, target, timestamp, and run ID.
 - **Temporal queries:** Inspect a character's history over a tick range and see consecutive activity periods grouped into segments.
 - **Spatial queries:** Find historical positions inside a radius using GeoJSON and a `2dsphere` index.
 - **Index comparison:** Compare an indexed spatial query with the same query forced to scan a MongoDB collection.
@@ -15,6 +15,7 @@ Each run starts with randomized NPC positions and behavior. The browser interfac
 - **Anomaly detection:** A movement-speed rule detects implausible jumps. NPC_03 deliberately teleports at tick 75 to demonstrate the alert.
 - **Road-aware navigation:** NPCs use A* pathfinding that favors streets, avoids building footprints, and routes through the southern gate when crossing the city wall.
 - **Behavioral memory:** MongoDB history records district visits and recent flee incidents. NPCs are more likely to return to familiar districts and temporarily avoid the district where they were startled; their profile explains the latest choice.
+- **Schedules and day/night:** Market workers, tavern staff, soldiers, and watch guards have different shift and sleep hours. NPCs travel to their workplace or home as their routine changes, while the accelerated world clock changes map lighting in live and replay views.
 - **Scalability lab:** Increase the crowd from 12 to 120 NPCs and chart live-versus-history query latency, dual-write throughput, current-run shard distribution, and indexed-versus-scan performance.
 - **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
 
@@ -77,14 +78,14 @@ To stop the database containers, run `docker compose down`. Docker's named volum
 
 ## Try a demo run
 
-1. Choose **Start** to watch the simulation advance in real time, or **Generate 300 ticks** to create history quickly.
+1. Choose **Start** to watch the simulation advance in real time, or **Generate 300 ticks** to create history quickly. The clock advances ten in-game minutes per tick, so a full day passes in 144 ticks.
 2. Switch to **Replay (MongoDB)** and scrub through the recorded frames.
-3. Select an NPC to inspect its current profile and historical activity.
+3. Watch NPCs head to their shifts, take free time, and return home for sleep. Select an NPC to inspect its work hours, sleep hours, and historical activity.
 4. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
 5. Open **Scalability** to change the NPC count and inspect latency, write rate, shard balance, and the index benchmark.
 6. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
 
-The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run.
+The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. Positions, dwell times, destinations, and movement events use a fresh random generator for each run. At ten in-game minutes per tick, a run can cover nearly three in-game days.
 
 ## Data and reset behavior
 
@@ -100,7 +101,7 @@ The full interactive schema is available at `/docs`. The main routes are:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/meta` | World, NPC, zone, and simulation metadata |
+| `GET` | `/api/meta` | World, NPC schedules, game clock, zones, and simulation metadata |
 | `GET` | `/api/stats` | Database counts and current simulation status |
 | `POST` | `/api/sim/configure?npcs=48` | Reinitialize the world at a chosen NPC count (12-120), preserving history |
 | `GET` | `/api/scalability` | Active-run shard distribution and write throughput samples |

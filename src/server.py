@@ -11,6 +11,7 @@ from .models import (
     WORLD_W, WORLD_H, ZONES, ACTIVITY_COLORS,
     CITY_HOUSES, MAX_TICKS, TICK_SECONDS, METERS_PER_UNIT,
     DEFAULT_NPC_COUNT, MAX_NPCS,
+    GAME_MINUTES_PER_TICK, GAME_START_MINUTES, ROLE_SCHEDULES,
 )
 from .writer import write_performance
 
@@ -36,11 +37,22 @@ def meta():
         "default_npc_count": DEFAULT_NPC_COUNT,
         "max_npcs": MAX_NPCS,
         "npcs": [
-            {"id": i, "name": engine.npc_names[i], "role": engine.npc_roles[i], "shard": SHARD_LABELS[shard_index(i)]}
-            for i in engine.npc_ids
+            {
+                "id": npc_id, "name": engine.npc_names[npc_id],
+                "role": engine.npc_roles[npc_id], "shard": SHARD_LABELS[shard_index(npc_id)],
+                "schedule": {
+                    **ROLE_SCHEDULES[engine.npc_roles[npc_id]],
+                    "home": f"House {index % len(CITY_HOUSES) + 1}",
+                },
+            }
+            for index, npc_id in enumerate(engine.npc_ids)
         ],
         "max_ticks": MAX_TICKS,
         "tick_seconds": TICK_SECONDS,
+        "game_time": {
+            "minutes_per_tick": GAME_MINUTES_PER_TICK,
+            "start_minutes": GAME_START_MINUTES,
+        },
     }
 
 

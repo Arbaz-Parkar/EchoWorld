@@ -22,7 +22,8 @@ def write_frame(tick, npcs, run_id):
 
         pipe.hset(f"npc:live:{n['id']}", mapping={
             "x": n["x"], "y": n["y"], "activity": n["activity"],
-            "zone": n["zone"] or "", "target": n["target"] or "", "tick": tick,
+            "zone": n["zone"] or "", "target": n["target"] or "",
+            "routine": n.get("routine") or "", "tick": tick,
         })
         pipe.geoadd(GEO_KEY, (lon, lat, n["id"]))
 
@@ -32,6 +33,7 @@ def write_frame(tick, npcs, run_id):
             "location": {"type": "Point", "coordinates": [lon, lat]},
             "activity": n["activity"], "zone": n["zone"] or "",
             "target": n["target"] or "",
+            "routine": n.get("routine") or "",
             "decision_note": n.get("decision_note", ""),
             "incident_zone": n.get("incident_zone") or "",
             "incident_tick": n.get("incident_tick"),
