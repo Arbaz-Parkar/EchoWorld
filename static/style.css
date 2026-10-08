@@ -236,6 +236,15 @@ h3 { margin: 18px 0 7px; font-size: 11.5px; text-transform: uppercase; letter-sp
   line-height: 1.5;
 }
 .lat { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.memory-card {
+  margin-top: 12px;
+  padding: 11px 12px;
+  background: rgba(10,16,20,0.2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.memory-card .eyebrow { color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.memory-card p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
 .empty, .note { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .field { display: block; color: var(--muted); font-size: 12px; margin: 10px 0; }

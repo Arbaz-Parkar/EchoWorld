@@ -12,6 +12,7 @@ from .models import (
 )
 from .writer import write_frame
 from .db import reset_all
+from .queries import behavioral_memory
 
 ZONE_BY_NAME = {z["name"]: z for z in ZONES}
 NAV_STEP = 0.5
@@ -278,6 +279,9 @@ class Engine:
                 "activity": zone["activity"],
                 "zone": zone["name"],
                 "target": None,
+                "decision_note": "Still learning the city; the first recorded choices will shape future visits.",
+                "incident_zone": None,
+                "incident_tick": None,
                 "mode": "dwell",
                 "timer": self.rng.randint(*DWELL_RANGE),
                 "path": [],
@@ -303,12 +307,34 @@ class Engine:
             return point
         return WORLD_W / 2, WORLD_H / 2
 
-    def _pick_target(self, current_zone):
+    def _pick_target(self, n):
+        memory = behavioral_memory(n["id"], self.run_id, self.tick)
+        visits = memory["visits"]
+        current_zone = n["zone"]
         options = [z for z in ZONES if z["name"] != current_zone]
-        return self.rng.choice(options)["name"]
+        avoided_zone = memory["avoided_zone"]
+        if avoided_zone:
+            safer_options = [z for z in options if z["name"] != avoided_zone]
+            if safer_options:
+                options = safer_options
 
-    def _assign_target(self, n, target_name):
+        weights = [1 + min(6, visits.get(z["name"], 0)) * 0.55 for z in options]
+        choice = self.rng.choices(options, weights=weights, k=1)[0]
+        previous_visits = visits.get(choice["name"], 0)
+        if previous_visits:
+            note = (
+                f"Returning to {choice['name']} after {previous_visits} recorded visit(s); "
+                "familiar districts have better odds."
+            )
+        else:
+            note = f"Exploring {choice['name']}; familiar districts still have better odds."
+        if avoided_zone:
+            note += f" Avoiding {avoided_zone} after a scare at tick {memory['last_incident_tick']}."
+        return choice["name"], note
+
+    def _assign_target(self, n, target_name, note):
         n["target"] = target_name
+        n["decision_note"] = note
         goal = _zone_stand_point(ZONE_BY_NAME[target_name])
         n["path"] = _find_path((n["x"], n["y"]), goal)
         n["path_index"] = 1 if len(n["path"]) > 1 else 0
@@ -320,6 +346,8 @@ class Engine:
         n["vy"] = math.sin(angle) * FLEE_SPEED
         n["flee_left"] = self.rng.randint(5, 9)
         n["activity"] = "fleeing"
+        n["incident_zone"] = n["zone"]
+        n["incident_tick"] = self.tick
         n["target"] = None
         n["path"] = []
         n["path_index"] = 0
@@ -343,7 +371,8 @@ class Engine:
         n["activity"] = "fleeing"
         if n["flee_left"] <= 0:
             n["mode"] = "travel"
-            self._assign_target(n, self._pick_target(n["zone"]))
+            target_name, note = self._pick_target(n)
+            self._assign_target(n, target_name, note)
 
     def _move_on_path(self, n, distance):
         path = n["path"]
@@ -390,7 +419,8 @@ class Engine:
             n["activity"] = zone["activity"]
             n["timer"] -= 1
             if n["timer"] <= 0:
-                self._assign_target(n, self._pick_target(n["zone"]))
+                target_name, note = self._pick_target(n)
+                self._assign_target(n, target_name, note)
                 n["mode"] = "travel"
                 n["activity"] = "walking"
             elif rng.random() < FLEE_CHANCE:
@@ -427,7 +457,8 @@ class Engine:
                     n["x"], n["y"] = self._random_walkable_position((n["x"], n["y"]))
                     n["zone"] = zone_at(n["x"], n["y"])
                     n["mode"] = "travel"
-                    self._assign_target(n, self._pick_target(n["zone"]))
+                    target_name, note = self._pick_target(n)
+                    self._assign_target(n, target_name, note)
                     n["activity"] = "walking"
                 else:
                     self._step_npc(n)
@@ -435,7 +466,10 @@ class Engine:
                 n["y"] = round(n["y"], 2)
             frame = [
                 {"id": n["id"], "x": n["x"], "y": n["y"], "activity": n["activity"],
-                 "zone": n["zone"], "target": n["target"]}
+                 "zone": n["zone"], "target": n["target"],
+                 "decision_note": n["decision_note"],
+                 "incident_zone": n["incident_zone"],
+                 "incident_tick": n["incident_tick"]}
                 for n in self.npcs
             ]
             write_frame(self.tick, frame, self.run_id)

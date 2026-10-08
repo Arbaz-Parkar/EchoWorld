@@ -14,6 +14,7 @@ Each run starts with randomized NPC positions and behavior. The browser interfac
 - **Simple sharding model:** History is routed to one of two MongoDB collections based on NPC ID. Queries that need world-wide results gather data from both collections.
 - **Anomaly detection:** A movement-speed rule detects implausible jumps. NPC_03 deliberately teleports at tick 75 to demonstrate the alert.
 - **Road-aware navigation:** NPCs use A* pathfinding that favors streets, avoids building footprints, and routes through the southern gate when crossing the city wall.
+- **Behavioral memory:** MongoDB history records district visits and recent flee incidents. NPCs are more likely to return to familiar districts and temporarily avoid the district where they were startled; their profile explains the latest choice.
 - **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
 
 ## How it fits together

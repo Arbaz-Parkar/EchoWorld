@@ -260,6 +260,7 @@ function wireEvents() {
     await simCall("/api/sim/fast_forward?ticks=300");
     $("btnFF").textContent = "Generate 300 ticks";
     scanAlerts();
+    if (state.selected) await refreshProfile();
   };
 
   $("btnPlay").onclick = () => {
@@ -1770,6 +1771,18 @@ function renderProfile() {
   $("npcLat").textContent =
     "Redis lookup " + p.ms_live.toFixed(2) + " ms | MongoDB lookup " + p.ms_history.toFixed(2) +
     " ms (" + p.records + " records, routed to " + p.shard + " only)";
+  const behavioral = p.behavioral_memory || {};
+  $("npcMemory").textContent = behavioral.latest_note || "No recorded travel decisions yet.";
+  const visits = Object.entries(behavioral.visits || {}).sort((a, b) => b[1] - a[1]);
+  const visitCount = visits.reduce((total, entry) => total + entry[1], 0);
+  let memoryMeta = visitCount + " recorded district visit" + (visitCount === 1 ? "" : "s");
+  if (visits.length) {
+    memoryMeta += " · Familiar with " + visits.slice(0, 2).map(([zone, count]) => zone + " (" + count + ")").join(", ");
+  }
+  if (behavioral.avoided_zone) {
+    memoryMeta += " · Avoiding " + behavioral.avoided_zone + " for " + behavioral.avoid_ticks_left + " more ticks";
+  }
+  $("npcMemoryMeta").textContent = memoryMeta;
   bars($("barsActivity"), p.time_by_activity, actColor);
   const zoneColors = {};
   state.meta.zones.forEach((z) => { zoneColors[z.name] = z.color; });

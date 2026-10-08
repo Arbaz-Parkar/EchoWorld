@@ -24,6 +24,9 @@ def write_frame(tick, npcs, run_id):
             "location": {"type": "Point", "coordinates": [lon, lat]},
             "activity": n["activity"], "zone": n["zone"] or "",
             "target": n["target"] or "",
+            "decision_note": n.get("decision_note", ""),
+            "incident_zone": n.get("incident_zone") or "",
+            "incident_tick": n.get("incident_tick"),
         })
 
     pipe.set("sim:tick", tick)

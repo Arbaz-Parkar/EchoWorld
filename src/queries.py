@@ -10,12 +10,18 @@ from .geo import (
     to_geo, position_from_document, units_to_meters, meters_to_units,
     EARTH_RADIUS_KM,
 )
-from .models import NPC_IDS, MAX_PLAUSIBLE_STEP
+from .models import NPC_IDS, MAX_PLAUSIBLE_STEP, MEMORY_AVOID_TICKS
 
 PROJECTION = {
     "_id": 0, "npc_id": 1, "tick": 1, "x": 1, "y": 1,
     "location": 1, "activity": 1, "zone": 1, "target": 1,
 }
+
+BEHAVIOR_PROJECTION = {
+    "_id": 0, "tick": 1, "zone": 1, "activity": 1,
+    "incident_zone": 1, "incident_tick": 1, "decision_note": 1,
+}
+PROFILE_PROJECTION = {**PROJECTION, **BEHAVIOR_PROJECTION}
 
 
 def _npc_view(d):
@@ -79,6 +85,55 @@ def _segments(docs):
     return segments
 
 
+def _behavior_summary(docs, current_tick):
+    visits = defaultdict(int)
+    previous_zone = None
+    for doc in docs:
+        activity = doc.get("activity")
+        zone = doc.get("zone") or None
+        if activity in ("walking", "fleeing"):
+            previous_zone = None
+        elif zone:
+            if zone != previous_zone:
+                visits[zone] += 1
+            previous_zone = zone
+        else:
+            previous_zone = None
+
+    incident_zone = None
+    incident_tick = None
+    for doc in reversed(docs):
+        if doc.get("incident_zone") and doc.get("incident_tick") is not None:
+            incident_zone = doc["incident_zone"]
+            incident_tick = int(doc["incident_tick"])
+            break
+
+    age = current_tick - incident_tick if incident_tick is not None else None
+    avoided_zone = incident_zone if age is not None and 0 <= age < MEMORY_AVOID_TICKS else None
+    latest_note = next(
+        (doc.get("decision_note") for doc in reversed(docs) if doc.get("decision_note")),
+        "",
+    )
+    return {
+        "visits": dict(visits),
+        "avoided_zone": avoided_zone,
+        "avoid_ticks_left": max(0, MEMORY_AVOID_TICKS - age) if avoided_zone else 0,
+        "last_incident_zone": incident_zone,
+        "last_incident_tick": incident_tick,
+        "latest_note": latest_note,
+    }
+
+
+def behavioral_memory(npc_id, run_id, current_tick):
+    """Builds an NPC's decision memory from its persisted run history."""
+    col = shard_for(npc_id)
+    docs = list(
+        col.find({"npc_id": npc_id, "run_id": run_id}, BEHAVIOR_PROJECTION)
+        .sort("tick", 1)
+    )
+    return _behavior_summary(docs, current_tick)
+
+
 def memory(npc_id, t_from, t_to, run_id):
     """Temporal query routed to one shard and limited to the active run."""
     t0 = time.perf_counter()
@@ -102,7 +157,7 @@ def npc_profile(npc_id, run_id):
     t0 = time.perf_counter()
     col = shard_for(npc_id)
     docs = list(
-        col.find({"npc_id": npc_id, "run_id": run_id}, PROJECTION).sort("tick", 1)
+        col.find({"npc_id": npc_id, "run_id": run_id}, PROFILE_PROJECTION).sort("tick", 1)
     )
     ms_history = (time.perf_counter() - t0) * 1000
 
@@ -138,6 +193,7 @@ def npc_profile(npc_id, run_id):
         "time_by_activity": dict(by_activity),
         "time_by_zone": dict(by_zone),
         "segments": _segments(docs),
+        "behavioral_memory": _behavior_summary(docs, docs[-1]["tick"] if docs else 0),
         "live": live,
         "ms_live": round(ms_live, 3),
         "ms_history": round(ms_history, 3),
