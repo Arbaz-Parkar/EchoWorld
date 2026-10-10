@@ -410,9 +410,12 @@ function wireEvents() {
 function resize() {
   const wrap = canvas.parentElement;
   dpr = window.devicePixelRatio || 1;
-  const w = wrap.clientWidth || 900;
+  const maxHeight = Math.min(window.innerHeight * 0.78, 900);
+  const maxWidth = (maxHeight * state.meta.world.w) / state.meta.world.h;
+  wrap.style.maxWidth = maxWidth + "px";
+  const w = wrap.clientWidth || Math.min(900, maxWidth);
   const h = (w * state.meta.world.h) / state.meta.world.w;
-  canvas.style.width = w + "px";
+  canvas.style.width = "100%";
   canvas.style.height = h + "px";
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);

@@ -230,6 +230,7 @@ main {
 .canvas-wrap {
   position: relative;
   width: 100%;
+  margin-inline: auto;
   overflow: hidden;
   border: 1px solid #34473a;
   border-radius: 13px;
