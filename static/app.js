@@ -2228,10 +2228,10 @@ function drawTimeline() {
   }
   const now = state.mode === "replay" ? state.playhead : state.live.tick;
   const mx = (Math.min(now, total) / total) * c.width;
-  g.fillStyle = "#23352b";
+  g.fillStyle = "#d4e3d8";
   g.fillRect(mx - 1, 0, 2 * dpr, c.height);
   g.font = Math.round(10 * dpr) + "px system-ui, sans-serif";
-  g.fillStyle = "#6b796f";
+  g.fillStyle = "#9aa79e";
   g.textAlign = "left";
   g.fillText("1", 2, c.height - 2);
   g.textAlign = "right";
@@ -2707,7 +2707,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   const { context: g, width, height: h } = chart;
   const allValues = series.flatMap((s) => s.values.map((p) => p.value)).filter(Number.isFinite);
   g.font = "11px system-ui, sans-serif";
-  g.fillStyle = "#6b796f";
+  g.fillStyle = "#9aa79e";
   if (!allValues.length) {
     g.fillText(emptyText, 12, Math.round(h / 2));
     return;
@@ -2718,9 +2718,9 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   const maxValue = Math.max(1, ...allValues) * 1.1;
   for (let i = 0; i <= 3; i++) {
     const y = top + plotH * i / 3;
-    g.strokeStyle = "rgba(107,121,111,0.18)";
+    g.strokeStyle = "rgba(154,167,158,0.18)";
     g.beginPath(); g.moveTo(left, y); g.lineTo(width - right, y); g.stroke();
-    g.fillStyle = "#6b796f";
+    g.fillStyle = "#9aa79e";
     g.textAlign = "right";
     g.fillText((maxValue * (1 - i / 3)).toFixed(maxValue < 10 ? 1 : 0), left - 6, y + 4);
   }
@@ -2728,7 +2728,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   series.forEach((s, seriesIndex) => {
     g.fillStyle = s.color;
     g.fillRect(left + seriesIndex * 120, 4, 9, 9);
-    g.fillStyle = "#35443a";
+    g.fillStyle = "#d0dad2";
     g.fillText(s.label, left + 14 + seriesIndex * 120, 13);
     if (!s.values.length) return;
     g.strokeStyle = s.color;
@@ -2741,7 +2741,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
     });
     g.stroke();
   });
-  g.fillStyle = "#6b796f";
+  g.fillStyle = "#9aa79e";
   g.textAlign = "left";
   g.fillText(unit, 4, 12);
   g.fillText("older", left, h - 4);
@@ -2755,7 +2755,7 @@ function drawWriteChart() {
     : [];
   drawLineChart("writeChart", [{
     label: "Dual-write",
-    color: "#438766",
+    color: "#83b998",
     values: samples.map((sample) => ({ value: sample.records_per_second })),
   }], "records/s", "Generate ticks to collect write samples.");
 }
@@ -2763,8 +2763,8 @@ function drawWriteChart() {
 function drawQueryChart() {
   const samples = state.performance.querySamples;
   drawLineChart("queryChart", [
-    { label: "Redis live", color: "#367d63", values: samples.map((s) => ({ value: s.redis_ms })) },
-    { label: "Mongo history", color: "#b9853d", values: samples.map((s) => ({ value: s.mongo_ms })) },
+    { label: "Redis live", color: "#83b998", values: samples.map((s) => ({ value: s.redis_ms })) },
+    { label: "Mongo history", color: "#d0aa6b", values: samples.map((s) => ({ value: s.mongo_ms })) },
   ], "ms", "Run a query sample to collect latency.");
 }
 
@@ -2781,22 +2781,22 @@ function drawIndexChart() {
     return;
   }
   const rows = [
-    { label: "2dsphere index", value: result.indexed_ms, color: "#438766" },
-    { label: "Collection scan", value: result.scan_ms, color: "#bf5149" },
+    { label: "2dsphere index", value: result.indexed_ms, color: "#83b998" },
+    { label: "Collection scan", value: result.scan_ms, color: "#d77e75" },
   ];
   const max = Math.max(0.01, ...rows.map((row) => row.value));
   rows.forEach((row, index) => {
     const y = 25 + index * 42;
     g.font = "11px system-ui, sans-serif";
-    g.fillStyle = "#35443a";
+    g.fillStyle = "#d0dad2";
     g.textAlign = "left";
     g.fillText(row.label, 2, y + 10);
     const x = 105, barW = Math.max(1, width - x - 54);
-    g.fillStyle = "rgba(107,121,111,0.15)";
+    g.fillStyle = "rgba(154,167,158,0.18)";
     g.fillRect(x, y, barW, 13);
     g.fillStyle = row.color;
     g.fillRect(x, y, Math.max(2, row.value / max * barW), 13);
-    g.fillStyle = "#35443a";
+    g.fillStyle = "#d0dad2";
     g.textAlign = "right";
     g.fillText(row.value.toFixed(2) + " ms", width - 2, y + 11);
   });
