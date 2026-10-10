@@ -410,7 +410,7 @@ function wireEvents() {
 function resize() {
   const wrap = canvas.parentElement;
   dpr = window.devicePixelRatio || 1;
-  const maxHeight = Math.min(window.innerHeight * 0.78, 900);
+  const maxHeight = Math.min(window.innerHeight * 0.86, 900);
   const maxWidth = (maxHeight * state.meta.world.w) / state.meta.world.h;
   wrap.style.maxWidth = maxWidth + "px";
   const w = wrap.clientWidth || Math.min(900, maxWidth);
