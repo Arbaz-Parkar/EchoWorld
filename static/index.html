@@ -38,14 +38,17 @@
           <button id="btnFF">Generate 300 ticks</button>
         </div>
       </div>
-      <div class="control-group seed-group">
-        <label class="control-label" for="runSeed">Optional run seed</label>
-        <div class="seed-controls">
-          <input id="runSeed" type="text" maxlength="64" autocomplete="off" placeholder="Blank = random">
-          <button id="btnNewRun" type="button">New run</button>
+      <details class="seed-group">
+        <summary class="control-label">Seed options</summary>
+        <div class="seed-content">
+          <label class="sr-only" for="runSeed">Optional run seed</label>
+          <div class="seed-controls">
+            <input id="runSeed" type="text" maxlength="64" autocomplete="off" placeholder="Blank = random">
+            <button id="btnNewRun" type="button">New run</button>
+          </div>
+          <div class="seed-status"><span id="runSeedStatus" class="sub" aria-live="polite"></span><button id="btnCopySeed" type="button">Use current</button></div>
         </div>
-        <div class="seed-status"><span id="runSeedStatus" class="sub" aria-live="polite"></span><button id="btnCopySeed" type="button">Use current</button></div>
-      </div>
+      </details>
     </div>
   </section>
 
@@ -75,7 +78,7 @@
           <span class="eyebrow">WORLD VIEW</span>
           <h2 id="worldHeading">The settlement</h2>
         </div>
-        <p>Scroll or use the zoom controls, then drag to pan. Use the minimap, district filters, or NPC search to find a place or character.</p>
+        <p>Explore the city, follow residents, and use the minimap to move between districts.</p>
       </div>
       <div class="map-toolbar" aria-label="Map navigation">
         <div class="map-zoom-controls" role="group" aria-label="Zoom controls">
@@ -93,7 +96,8 @@
         </div>
       </div>
       <div id="districtFilters" class="district-filters" aria-label="Filter NPCs by district">
-        <span class="filter-label">District</span>
+        <label for="districtSelect">District</label>
+        <select id="districtSelect" aria-label="Filter NPCs by district"></select>
         <span id="districtStatus" class="sub" aria-live="polite"></span>
       </div>
       <div class="canvas-wrap">

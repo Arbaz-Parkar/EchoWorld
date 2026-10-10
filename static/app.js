@@ -274,27 +274,19 @@ function buildMapNavigation() {
     options.appendChild(option);
   }
 
-  const filters = $("districtFilters");
-  filters.querySelectorAll(".filter-chip").forEach((button) => button.remove());
-  const all = document.createElement("button");
-  all.type = "button";
-  all.className = "filter-chip active";
-  all.dataset.district = "all";
-  all.textContent = "All";
-  all.onclick = () => setDistrictFilter("all");
-  filters.appendChild(all);
+  const districtSelect = $("districtSelect");
+  districtSelect.replaceChildren();
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All districts";
+  districtSelect.appendChild(all);
   for (const zone of state.meta.zones) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "filter-chip";
-    button.dataset.district = zone.name;
-    button.textContent = zone.name;
-    button.onclick = () => {
-      setDistrictFilter(zone.name);
-      setCameraCenter(zone.x, zone.y, Math.max(state.camera.zoom, 1.45));
-    };
-    filters.appendChild(button);
+    const option = document.createElement("option");
+    option.value = zone.name;
+    option.textContent = zone.name;
+    districtSelect.appendChild(option);
   }
+  districtSelect.value = state.mapFilter;
   updateDistrictStatus();
 }
 
@@ -316,6 +308,11 @@ function wireEvents() {
   });
   $("btnToggleMinimap").onclick = toggleMinimap;
   minimap.addEventListener("click", onMinimapClick);
+  $("districtSelect").onchange = (event) => {
+    setDistrictFilter(event.target.value);
+    const zone = state.meta.zones.find((item) => item.name === event.target.value);
+    if (zone) setCameraCenter(zone.x, zone.y, Math.max(state.camera.zoom, 1.45));
+  };
 
   $("modeLive").onclick = () => setMode("live");
   $("modeReplay").onclick = () => setMode("replay");
@@ -522,9 +519,7 @@ function endMapPan(e) {
 
 function setDistrictFilter(district) {
   state.mapFilter = district;
-  document.querySelectorAll(".filter-chip").forEach((button) => {
-    button.classList.toggle("active", button.dataset.district === district);
-  });
+  $("districtSelect").value = district;
   updateDistrictStatus();
 }
 
@@ -2233,10 +2228,10 @@ function drawTimeline() {
   }
   const now = state.mode === "replay" ? state.playhead : state.live.tick;
   const mx = (Math.min(now, total) / total) * c.width;
-  g.fillStyle = "#ffffff";
+  g.fillStyle = "#23352b";
   g.fillRect(mx - 1, 0, 2 * dpr, c.height);
   g.font = Math.round(10 * dpr) + "px system-ui, sans-serif";
-  g.fillStyle = "#8b9bab";
+  g.fillStyle = "#6b796f";
   g.textAlign = "left";
   g.fillText("1", 2, c.height - 2);
   g.textAlign = "right";
@@ -2660,7 +2655,7 @@ function renderShardDistribution(counts, total) {
   box.replaceChildren();
   const entries = Object.entries(counts || {});
   const max = Math.max(1, ...entries.map((entry) => entry[1]));
-  const colors = ["#5ec8f0", "#f2b84b"];
+  const colors = ["#367d63", "#b9853d"];
   entries.forEach(([name, count], index) => {
     const row = document.createElement("div");
     row.className = "bar";
@@ -2712,7 +2707,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   const { context: g, width, height: h } = chart;
   const allValues = series.flatMap((s) => s.values.map((p) => p.value)).filter(Number.isFinite);
   g.font = "11px system-ui, sans-serif";
-  g.fillStyle = "#90a2b3";
+  g.fillStyle = "#6b796f";
   if (!allValues.length) {
     g.fillText(emptyText, 12, Math.round(h / 2));
     return;
@@ -2723,9 +2718,9 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   const maxValue = Math.max(1, ...allValues) * 1.1;
   for (let i = 0; i <= 3; i++) {
     const y = top + plotH * i / 3;
-    g.strokeStyle = "rgba(144,162,179,0.18)";
+    g.strokeStyle = "rgba(107,121,111,0.18)";
     g.beginPath(); g.moveTo(left, y); g.lineTo(width - right, y); g.stroke();
-    g.fillStyle = "#90a2b3";
+    g.fillStyle = "#6b796f";
     g.textAlign = "right";
     g.fillText((maxValue * (1 - i / 3)).toFixed(maxValue < 10 ? 1 : 0), left - 6, y + 4);
   }
@@ -2733,7 +2728,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
   series.forEach((s, seriesIndex) => {
     g.fillStyle = s.color;
     g.fillRect(left + seriesIndex * 120, 4, 9, 9);
-    g.fillStyle = "#c8d3dc";
+    g.fillStyle = "#35443a";
     g.fillText(s.label, left + 14 + seriesIndex * 120, 13);
     if (!s.values.length) return;
     g.strokeStyle = s.color;
@@ -2746,7 +2741,7 @@ function drawLineChart(id, series, unit, emptyText, height = 170) {
     });
     g.stroke();
   });
-  g.fillStyle = "#90a2b3";
+  g.fillStyle = "#6b796f";
   g.textAlign = "left";
   g.fillText(unit, 4, 12);
   g.fillText("older", left, h - 4);
@@ -2760,7 +2755,7 @@ function drawWriteChart() {
     : [];
   drawLineChart("writeChart", [{
     label: "Dual-write",
-    color: "#6fcf97",
+    color: "#438766",
     values: samples.map((sample) => ({ value: sample.records_per_second })),
   }], "records/s", "Generate ticks to collect write samples.");
 }
@@ -2768,8 +2763,8 @@ function drawWriteChart() {
 function drawQueryChart() {
   const samples = state.performance.querySamples;
   drawLineChart("queryChart", [
-    { label: "Redis live", color: "#5ec8f0", values: samples.map((s) => ({ value: s.redis_ms })) },
-    { label: "Mongo history", color: "#f2b84b", values: samples.map((s) => ({ value: s.mongo_ms })) },
+    { label: "Redis live", color: "#367d63", values: samples.map((s) => ({ value: s.redis_ms })) },
+    { label: "Mongo history", color: "#b9853d", values: samples.map((s) => ({ value: s.mongo_ms })) },
   ], "ms", "Run a query sample to collect latency.");
 }
 
@@ -2779,29 +2774,29 @@ function drawIndexChart() {
   if (!chart) return;
   const { context: g, width, height: h } = chart;
   if (!result) {
-    g.fillStyle = "#90a2b3";
+    g.fillStyle = "#6b796f";
     g.font = "12px system-ui, sans-serif";
     g.fillText("Run the benchmark to compare both query plans.", 12, h / 2);
     $("scaleIndexSummary").textContent = "";
     return;
   }
   const rows = [
-    { label: "2dsphere index", value: result.indexed_ms, color: "#6fcf97" },
-    { label: "Collection scan", value: result.scan_ms, color: "#ef5b5b" },
+    { label: "2dsphere index", value: result.indexed_ms, color: "#438766" },
+    { label: "Collection scan", value: result.scan_ms, color: "#bf5149" },
   ];
   const max = Math.max(0.01, ...rows.map((row) => row.value));
   rows.forEach((row, index) => {
     const y = 25 + index * 42;
     g.font = "11px system-ui, sans-serif";
-    g.fillStyle = "#c8d3dc";
+    g.fillStyle = "#35443a";
     g.textAlign = "left";
     g.fillText(row.label, 2, y + 10);
     const x = 105, barW = Math.max(1, width - x - 54);
-    g.fillStyle = "rgba(144,162,179,0.15)";
+    g.fillStyle = "rgba(107,121,111,0.15)";
     g.fillRect(x, y, barW, 13);
     g.fillStyle = row.color;
     g.fillRect(x, y, Math.max(2, row.value / max * barW), 13);
-    g.fillStyle = "#eaf0f6";
+    g.fillStyle = "#35443a";
     g.textAlign = "right";
     g.fillText(row.value.toFixed(2) + " ms", width - 2, y + 11);
   });
