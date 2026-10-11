@@ -1,157 +1,218 @@
 # EchoWorld
 
-EchoWorld is a small, interactive NPC world built to demonstrate how a game-like simulation can use different NoSQL databases for live state and historical memory. Its original Nordic-inspired city has stone walls, gate towers, a raised high hall, a central market square, and distinct civic districts. Watch characters move through the city, inspect what they were doing at earlier ticks, and compare spatial queries that use a MongoDB geospatial index with a collection scan.
+**A spatial memory system for simulated game NPCs, built with Redis and MongoDB.**
 
-Each run starts with randomized NPC positions and behavior. The browser interface displays the world in a canvas and includes live and replay modes, character profiles, a Query Lab, and an anomaly alert view.
+EchoWorld is an interactive city simulation and database engineering demo. It separates each character's current state from their historical memory: Redis answers what an NPC is doing now, while MongoDB records where that NPC has been and what they were doing over time. A browser interface makes the data flows, spatial queries, replay, and performance trade-offs explorable.
 
-## What it demonstrates
+The project is designed to demonstrate database concepts in a working system—not to claim production-scale game performance or native MongoDB cluster sharding.
 
-- **Live state in Redis:** Each NPC's current state is stored as a Redis hash. Redis GEO supports nearby-character lookups.
-- **History in MongoDB:** Every simulation tick is stored as a document with the NPC's position, activity, routine, zone, target, timestamp, and run ID.
-- **Temporal queries:** Inspect a character's history over a tick range and see consecutive activity periods grouped into segments.
-- **Spatial queries:** Find historical positions inside a radius using GeoJSON and a `2dsphere` index.
-- **Index comparison:** Compare an indexed spatial query with the same query forced to scan a MongoDB collection.
-- **Simple sharding model:** History is routed to one of two MongoDB collections based on NPC ID. Queries that need world-wide results gather data from both collections.
-- **Anomaly detection:** A movement-speed rule detects implausible jumps. NPC_03 deliberately teleports at tick 75 to demonstrate the alert.
-- **Road-aware navigation:** NPCs use A* pathfinding that favors streets, avoids building footprints, and routes through the southern gate when crossing the city wall.
-- **Map navigation:** Zoom with the wheel or controls, drag to pan, use the clickable minimap to move across town, filter residents by district, and search for a named NPC.
-- **Behavioral memory:** MongoDB history records district visits and recent flee incidents. NPCs are more likely to return to familiar districts and temporarily avoid the district where they were startled; their profile explains the latest choice.
-- **Schedules and day/night:** Market workers, tavern staff, soldiers, and watch guards have different shift and sleep hours. NPCs travel to their workplace or home as their routine changes, while the accelerated world clock changes map lighting in live and replay views.
-- **Scalability lab:** Increase the crowd from 12 to 120 NPCs and chart live-versus-history query latency, dual-write throughput, current-run shard distribution, and indexed-versus-scan performance.
-- **Reproducible runs:** Runs receive a fresh random seed by default. Enter a seed to repeat the same simulation with the same NPC count, and compare any two saved runs at the same tick.
-- **Interactive exploration:** Switch between live simulation and recorded replay, select NPCs, and explore the query and alert panels.
+## At a glance
 
-## How it fits together
+| | |
+| --- | --- |
+| **Backend** | Python, FastAPI, Uvicorn |
+| **Live state** | Redis hashes and GEO search |
+| **History and spatial queries** | MongoDB documents and a `2dsphere` index |
+| **Frontend** | HTML, CSS, JavaScript, Canvas; no frontend framework |
+| **Local services** | Docker Compose, MongoDB 7, Redis 7 |
+| **Simulation** | 12–120 NPCs, seeded runs, 8 city districts, up to 400 ticks |
+
+## Why EchoWorld
+
+Game systems frequently need two different kinds of answers:
+
+- **What is happening now?** A game needs an NPC's latest position and activity quickly and repeatedly.
+- **What happened before?** A replay, memory view, or historical location search needs records that remain available over time.
+
+EchoWorld models both questions with separate storage paths. Redis holds the current snapshot and supports live nearby-character lookups. MongoDB keeps append-only, run-scoped history for replay, temporal queries, spatial analysis, and comparison.
+
+## Features
+
+- **Live simulation and replay:** Start, pause, reset, or fast-forward the world, then inspect recorded frames in replay mode.
+- **Distinct live and history stores:** Read the current snapshot from Redis and query prior ticks from MongoDB.
+- **Temporal NPC memory:** Inspect activity periods, district visits, schedules, and recent flee incidents.
+- **Spatial queries:** Find nearby NPCs in the live world and in historical records.
+- **Geospatial index comparison:** Compare a MongoDB `2dsphere` query with a forced collection scan and inspect the reported query-plan stages.
+- **Application-level data partitioning:** Route each NPC's history to one of two MongoDB collections and combine both collections for world-wide queries.
+- **Seeded, comparable runs:** Generate random runs by default, reproduce a run with its seed and NPC count, and view two saved runs at the same tick.
+- **Schedule and day/night simulation:** NPCs follow role-specific work and sleep periods while map lighting changes with the accelerated game clock.
+- **Road-aware movement:** NPCs use A* pathfinding that favors streets, avoids building footprints, and routes through the city gate.
+- **Scalability lab:** Increase the NPC count and chart query latency, dual-write throughput, per-run shard distribution, and indexed-versus-scan timings.
+- **Movement anomaly demonstration:** A deliberate NPC_03 teleport gives the speed-limit detector a known event to find.
+- **Map exploration:** Zoom, pan, search for residents, filter districts, and use the minimap to navigate the settlement.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-    UI[Browser UI<br/>Canvas and controls] -->|HTTP API| API[FastAPI server<br/>simulation and queries]
-    API -->|Current state and GEO| Redis[(Redis)]
-    API -->|Tick history and geospatial queries| Mongo[(MongoDB)]
-    Mongo --> A[npc_history_shard_a]
-    Mongo --> B[npc_history_shard_b]
+    Browser[Browser UI<br/>Canvas, map, query tools] -->|HTTP / JSON| API[FastAPI application]
+    API --> Engine[Simulation engine<br/>NPC routines and movement]
+    Engine --> Writer[Frame writer]
+    Writer -->|Current hashes and GEO positions| Redis[(Redis<br/>Live state)]
+    Writer -->|Append history by NPC ID| Mongo[(MongoDB<br/>History collections)]
+    API -->|Live snapshot and nearby search| Redis
+    API -->|Replay, memory, spatial history, benchmarks| Mongo
 ```
 
-The simulation advances in ticks and writes each frame to both storage layers. Redis serves the latest NPC state; MongoDB keeps the history for replay and analysis. Each server process gets a new run ID, so replay, profiles, memory queries, and anomaly scans are scoped to that run.
+### Tick and storage flow
 
-MongoDB's two collections are an educational sharding model implemented by the application. This project does not configure MongoDB's built-in cluster sharding.
+1. The simulation advances each NPC by one tick.
+2. The frame writer sends the latest NPC hashes and GEO positions to Redis using a pipeline.
+3. It creates history documents and inserts them into the collection selected from the NPC ID.
+4. FastAPI serves live state from Redis and replay/history queries from MongoDB. Queries that span all NPCs read both history collections and merge the results.
 
-## Tech stack
+Redis and MongoDB writes are sequential; the application does not use a distributed transaction across the two databases.
 
-- Python, FastAPI, and Uvicorn
-- Redis for live NPC state and geospatial lookups
-- MongoDB for persistent history and geospatial indexes
-- Docker Compose for the database services
-- HTML, CSS, and JavaScript Canvas for the browser UI
+## Data model and query design
 
-## Requirements
+### Redis: current state
 
-- Python and pip
-- Docker Desktop (or Docker Engine with Docker Compose)
-- A browser
+- One hash per NPC, such as `npc:live:NPC_01`, contains the current position, activity, zone, target, routine, and tick.
+- A GEO set, `npc:live:positions`, indexes NPC locations for nearby searches.
+- `sim:tick` stores the current simulation tick.
 
-The app expects MongoDB at `localhost:27017` and Redis at `localhost:6379`. These addresses are set in `src/config.py`.
+### MongoDB: historical state
 
-## Run locally (Windows PowerShell)
+Each tick produces a document with fields including `run_id`, `seed`, `npc_count`, `npc_id`, `tick`, timestamp, map coordinates, GeoJSON `location`, activity, zone, target, routine, and behavior/incident metadata.
 
-1. Start Docker Desktop, then start the databases from the project directory:
+The two collections are `npc_history_shard_a` and `npc_history_shard_b`. The application assigns a character's records using the parity of the numeric portion of its NPC ID. Individual NPC queries can route to one collection; queries covering the city gather results from both.
 
-   ```powershell
-   docker compose up -d
-   ```
+Indexes include a geospatial `2dsphere` index on `location` and compound indexes for NPC, run, and tick lookups. The map is 100 × 80 units; one map unit represents 50 metres. Coordinates are projected to a small area near longitude 73.10 and latitude 19.00 for database geospatial operations.
 
-2. Create and activate a virtual environment, then install the Python packages:
+### Query examples
 
-   ```powershell
-   py -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   python -m pip install -r requirements.txt
-   ```
+- **Live nearby search:** Redis GEO search around a selected map point.
+- **Historical nearby search:** MongoDB GeoJSON `$geoWithin` / `$centerSphere` query over the run's history collections.
+- **Memory by time:** Select one NPC and a tick range, route to its collection, and group consecutive records into activity segments.
+- **Replay:** Fetch tick ranges from both collections, combine records by tick, then render the frames in the browser.
+- **Index benchmark:** Run the same spatial filter with the `2dsphere` index and a `$natural` hint that forces a collection scan; include MongoDB explain-plan information.
 
-3. Start the web app:
+## Simulation model
 
-   ```powershell
-   python run.py
-   ```
+- A fresh random seed is used by default. Providing the same seed, NPC count, and simulation version reproduces the run's random choices.
+- The default population is 12 NPCs; the supported range is 12–120.
+- NPC roles include Market, Tavern, Barracks, and Watchtower workers. Each role has configured work and sleep windows.
+- The world clock starts at 06:00 and advances by 10 in-game minutes per tick. A full in-game day takes 144 ticks; the normal live tick interval is 0.25 seconds.
+- During leisure time, NPCs choose destinations using a weighted heuristic informed by recorded district visits. Recent flee incidents can temporarily reduce the chance of returning to the incident district.
+- NPC_03 deliberately teleports at tick 75 of a run. The anomaly endpoint detects implausible movement using a configured per-tick distance threshold. This is an intentional demo event, not an accidental glitch.
+- Runs stop at 400 ticks unless the simulation is paused or reset earlier.
 
-4. Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The interactive API reference is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+## Run locally
 
-To stop the database containers, run `docker compose down`. Docker's named volumes retain their data when the containers stop.
+### Prerequisites
 
-## Try a demo run
+- Python 3.10 or newer
+- Docker Desktop or Docker Engine with Docker Compose
+- A modern browser
 
-1. Choose **Start** to watch the simulation advance in real time, or **Generate 300 ticks** to create history quickly. The clock advances ten in-game minutes per tick, so a full day passes in 144 ticks.
-2. Zoom and pan around the city, click the minimap to jump to a district, or use the district chips and NPC search to locate residents.
-3. Switch to **Replay (MongoDB)** and scrub through the recorded frames.
-4. Watch NPCs head to their shifts, take free time, and return home for sleep. Select an NPC to inspect its work hours, sleep hours, and historical activity.
-5. Open **Query Lab** to try temporal and nearby-character queries and compare indexed and scan-based query performance.
-6. Open **Scalability** to change the NPC count and inspect latency, write rate, shard balance, and the index benchmark.
-7. Enter a seed in **Optional run seed** and choose **New run**. To reproduce it, run again with the same seed and NPC count; **Use current** copies the current seed into the input.
-8. Open **Compare runs** to select two saved runs, view the same tick side by side, and see how many NPC positions and activities match.
-9. Open **Alerts** and scan the current run for movement anomalies. The deliberate NPC_03 teleport at tick 75 demonstrates the detector.
+MongoDB and Redis are configured at `localhost:27017` and `localhost:6379` in `src/config.py`.
 
-The city starts with 12 NPCs and supports up to 120, with eight destinations and a maximum of 400 ticks per run. By default each new run gets a fresh random seed. Supplying the same seed and NPC count reproduces the same positions, dwell times, destinations, and movement events for the same simulation version. At ten in-game minutes per tick, a run can cover nearly three in-game days.
+### Start the databases and app
 
-## Data and reset behavior
+From the project directory, in Windows PowerShell:
 
-- Starting a new server process creates a new run ID and a fresh random seed. Previous MongoDB records remain stored and appear in the run comparison list.
-- **New run** and NPC-count changes keep previous MongoDB history. Leave the seed blank for a random run or enter a seed to reproduce it. Exact reproduction requires the same NPC count and simulation version.
-- Changing the NPC count starts a new run and keeps previous MongoDB history. The Scalability tab counts records and writes for the active run; the index benchmark also reports the total shard collection size its forced scan traverses.
-- The database status counters show collection totals, so they can include history from earlier runs.
-- The app's **Reset** control clears history from both MongoDB collections and clears the app's Redis state, then initializes a fresh run.
-- MongoDB and Redis use Docker named volumes. Stopping the containers with `docker compose down` preserves the data; use the app's Reset control to clear the EchoWorld data.
+```powershell
+docker compose up -d
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python run.py
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The interactive API schema is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+To stop the containers while keeping their named-volume data:
+
+```powershell
+docker compose down
+```
+
+**Data note:** The app's **Reset** control deletes EchoWorld history from both MongoDB collections and clears the app's Redis keys. **New run** and NPC-count changes preserve prior MongoDB history. Docker named volumes also persist when containers are stopped.
+
+## Suggested demo flow
+
+1. Select **Generate 300 ticks** to create a recorded run quickly, or select **Start** to watch it advance live.
+2. Explore the city with zoom, pan, the minimap, district filter, or NPC search.
+3. Select an NPC to inspect its profile, schedule, and recorded activity.
+4. Switch to **Replay (MongoDB)**, scrub through the run, and observe changes in the world clock and lighting.
+5. Use **Query Lab** to compare live and historical nearby searches and inspect temporal memory.
+6. Use **Scalability** to change the NPC count and view write and query measurements.
+7. Use **Compare Runs** to inspect two saved runs at the same tick.
+8. Open **Alerts** to locate the deliberately injected NPC_03 movement anomaly.
+
+## Performance measurements and their limits
+
+The dashboard is intended to make database behavior observable during a local demonstration:
+
+- **Query latency** measures the live Redis snapshot and MongoDB history query paths.
+- **Dual-write throughput** records the number of NPC records written per second across the Redis and MongoDB work in a frame.
+- **Shard distribution** counts the active run's documents in each history collection.
+- **Index versus scan** compares repeated timings and query-plan stages for the indexed and forced-scan spatial queries.
+
+These measurements depend on the local machine, database contents, and runtime conditions. The current index benchmark queries the first history collection only, and keeps the fastest of 15 repetitions to reduce one-off timing noise. Treat the output as a demonstration, not a production benchmark or a claim about cluster-wide performance.
 
 ## API overview
 
-The full interactive schema is available at `/docs`. The main routes are:
-
-| Method | Route | Purpose |
+| Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/meta` | World, NPC schedules, game clock, zones, and simulation metadata |
-| `GET` | `/api/stats` | Database counts and current simulation status |
-| `GET` | `/api/runs` | Saved run IDs, seeds, NPC counts, and recorded tick ranges |
-| `POST` | `/api/sim/new_run?seed=market-day` | Start a seeded or random run, preserving prior history |
-| `POST` | `/api/sim/configure?npcs=48&seed=market-day` | Reinitialize at a chosen NPC count (12-120), preserving history |
-| `GET` | `/api/scalability` | Active-run shard distribution and write throughput samples |
-| `GET` | `/api/live` | Current NPC snapshot from Redis |
-| `GET` | `/api/frames?start=1&end=400` | Recorded frames for the active run; add `run_id=...` to load another saved run |
-| `GET` | `/api/npc/{npc_id}` | NPC profile and history summary |
-| `GET` | `/api/memory?npc=NPC_01&t_from=1&t_to=100` | One NPC's history over a tick range |
-| `GET` | `/api/nearby?x=50&y=40&radius=10&t_from=1&t_to=400` | Live and historical nearby-position query |
-| `GET` | `/api/index_benchmark?x=50&y=40&radius=10` | Compare indexed lookup and collection scan |
-| `GET` | `/api/anomalies` | Detect implausible movement in the active run |
-| `POST` | `/api/sim/start` | Start real-time simulation |
-| `POST` | `/api/sim/pause` | Pause real-time simulation |
-| `POST` | `/api/sim/reset?seed=market-day` | Clear stored app data and initialize a seeded or random run |
-| `POST` | `/api/sim/fast_forward?ticks=300` | Advance the simulation without real-time delays |
+| `GET` | `/api/meta` | World, zones, NPC schedules, and run metadata |
+| `GET` | `/api/stats` | Database counts and simulation status |
+| `GET` | `/api/runs` | Saved run catalog |
+| `POST` | `/api/sim/start` | Start live simulation |
+| `POST` | `/api/sim/pause` | Pause live simulation |
+| `POST` | `/api/sim/new_run?seed=...` | Start a random or seeded run and retain prior history |
+| `POST` | `/api/sim/configure?npcs=48&seed=...` | Start a run with a selected population and optional seed |
+| `POST` | `/api/sim/reset?seed=...` | Clear EchoWorld data and initialize a new run |
+| `POST` | `/api/sim/fast_forward?ticks=300` | Advance without real-time delays |
+| `GET` | `/api/live` | Read current NPC state from Redis |
+| `GET` | `/api/frames?start=1&end=300&run_id=...` | Read recorded frames from MongoDB |
+| `GET` | `/api/npc/{npc_id}` | Read an NPC profile |
+| `GET` | `/api/memory?npc=NPC_01&t_from=1&t_to=100` | Query one NPC's history over a tick range |
+| `GET` | `/api/nearby?x=50&y=40&radius=10` | Compare live and historical nearby results |
+| `GET` | `/api/index_benchmark?x=50&y=40&radius=10` | Compare indexed and forced-scan query paths |
+| `GET` | `/api/scalability` | Read current-run shard counts and write samples |
+| `GET` | `/api/anomalies` | Find implausible movement in the current run |
 
-Coordinates `x` and `y` are expressed in world units. MongoDB records also store a GeoJSON point projected from the small world map so that geospatial operations use distances in meters.
+Coordinates use map units. The interactive API reference at `/docs` lists the available routes and parameter constraints.
 
 ## Project structure
 
 ```text
 EchoWorld/
-├── run.py                 # Starts the FastAPI app
-├── requirements.txt       # Python dependencies
-├── docker-compose.yml     # MongoDB and Redis services
+├── run.py                  # Starts the local FastAPI server
+├── requirements.txt        # Python dependencies
+├── docker-compose.yml      # Local MongoDB and Redis services
 ├── src/
-│   ├── server.py          # API routes and static UI hosting
-│   ├── engine.py          # Randomized tick-based NPC simulation
-│   ├── db.py              # Database clients, collections, and indexes
-│   ├── writer.py          # Writes live state and history
-│   ├── queries.py         # Temporal, spatial, and benchmark queries
-│   ├── analytics.py       # Movement anomaly detection
-│   ├── geo.py             # World-to-GeoJSON coordinate conversion
-│   └── models.py          # NPC, world, and simulation settings
+│   ├── analytics.py        # Movement anomaly detection
+│   ├── config.py           # Local database connection settings
+│   ├── db.py               # Database clients, collections, indexes, reset
+│   ├── engine.py           # NPC simulation, schedules, and pathfinding
+│   ├── geo.py              # Map-to-GeoJSON coordinate conversion
+│   ├── models.py           # World, NPC, and simulation definitions
+│   ├── queries.py          # Live, temporal, spatial, and benchmark queries
+│   ├── server.py           # FastAPI routes and static-file hosting
+│   └── writer.py           # Redis and MongoDB frame writes
 └── static/
-    ├── index.html         # Browser interface
-    ├── app.js             # UI behavior and API calls
-    └── style.css          # Interface styles
+    ├── app.js              # Canvas rendering and browser interactions
+    ├── index.html          # Page structure
+    └── style.css           # Responsive dark interface
 ```
 
-## Troubleshooting
+## Design trade-offs and current scope
 
-- **The app cannot connect to a database:** Check that Docker is running and that both containers are up with `docker compose ps`.
-- **A database port is already in use:** Free port `27017` or `6379`, or update the matching Compose port and the connection setting in `src/config.py`.
-- **Replay is empty:** Start the simulation or generate ticks first. Replay reads recorded MongoDB history for the active run.
-- **Old records remain in the status counters:** Those totals include earlier runs. Use the app's Reset control to clear EchoWorld's MongoDB history and Redis state.
+- **Educational partitioning:** The two MongoDB collections model application-level routing. They are not separate MongoDB servers or a native sharded cluster.
+- **Local demo deployment:** The web app and databases are intended to run locally. The API has no authentication, and Reset removes EchoWorld data; do not expose it publicly without adding appropriate security and configuration.
+- **Cross-store writes:** A frame is written to Redis and then MongoDB. There is no distributed transaction, retry queue, or reconciliation process between the stores.
+- **Simplified world behavior:** NPC choices are rule-based and seeded. They do not use an LLM, reinforcement learning, or a trained AI model.
+- **Performance scope:** The included charts are useful for observing this local implementation, but they do not replace controlled load testing on a multi-node deployment.
+
+## Potential next steps
+
+- Add automated tests for simulation determinism, query correctness, and API behavior.
+- Add configurable database connection settings and deployment hardening.
+- Run repeatable performance experiments with recorded environment details and larger datasets.
+- Explore a real multi-node sharding setup or optional learned NPC behavior as separate extensions.
+
+## License
+
+No license is currently included in this repository. Contact the author before reusing or redistributing the project.
